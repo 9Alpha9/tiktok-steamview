@@ -46,7 +46,7 @@ export function LiveChat() {
         if (payload.type === "connected") {
           setIsConnected(true);
           setMessages(prev => [...prev, {
-            id: `sys-${Date.now()}`,
+            id: `sys-conn-${Date.now()}-${Math.random()}`,
             type: "system",
             username: "System",
             message: `Connected to @${activeUsername}'s live stream.`,
@@ -57,7 +57,7 @@ export function LiveChat() {
         if (payload.type === "disconnected") {
           setIsConnected(false);
           setMessages(prev => [...prev, {
-            id: `sys-${Date.now()}`,
+            id: `sys-disc-${Date.now()}-${Math.random()}`,
             type: "system",
             username: "System",
             message: "Disconnected from live stream.",
@@ -68,11 +68,11 @@ export function LiveChat() {
         if (payload.type === "chat" && payload.data) {
           setMessages(prev => {
             const updated = [...prev, {
-              id: payload.data.msgId || `chat-${Date.now()}`,
+              id: payload.data?.common?.msgId || payload.data?.msgId || `chat-${Date.now()}`,
               type: "chat",
-              username: payload.data.uniqueId || "User",
-              message: payload.data.comment,
-              avatarUrl: payload.data.profilePictureUrl,
+              username: payload.data?.user?.displayId || payload.data?.user?.nickname || payload.data?.uniqueId || "User",
+              message: payload.data?.content || payload.data?.comment || "",
+              avatarUrl: payload.data?.user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
               timestamp: Date.now(),
             } as ChatMessage];
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
@@ -81,15 +81,17 @@ export function LiveChat() {
 
         if (payload.type === "gift" && payload.data) {
           setMessages(prev => {
+            const giftName = payload.data?.gift?.name || payload.data?.giftName || "a gift";
+            const giftCount = payload.data?.comboCount || payload.data?.repeatCount || 1;
             const updated = [...prev, {
-              id: payload.data.msgId || `gift-${Date.now()}`,
+              id: payload.data?.common?.msgId || payload.data?.msgId || `gift-${Date.now()}`,
               type: "gift",
-              username: payload.data.uniqueId || "User",
-              message: `Sent ${payload.data.giftName} x${payload.data.repeatCount}`,
-              avatarUrl: payload.data.profilePictureUrl,
-              giftName: payload.data.giftName,
-              giftCount: payload.data.repeatCount,
-              giftIcon: payload.data.giftPictureUrl,
+              username: payload.data?.user?.displayId || payload.data?.user?.nickname || payload.data?.uniqueId || "User",
+              message: `Sent ${giftName} x${giftCount}`,
+              avatarUrl: payload.data?.user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
+              giftName: giftName,
+              giftCount: giftCount,
+              giftIcon: payload.data?.gift?.image?.urlList?.[0] || payload.data?.giftPictureUrl,
               timestamp: Date.now(),
             } as ChatMessage];
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
@@ -99,7 +101,7 @@ export function LiveChat() {
         if (payload.type === "error") {
           console.error("TikTok live error:", payload.message);
           setMessages(prev => [...prev, {
-            id: `sys-err-${Date.now()}`,
+            id: `sys-err-${Date.now()}-${Math.random()}`,
             type: "system",
             username: "Error",
             message: payload.message || "Connection error",

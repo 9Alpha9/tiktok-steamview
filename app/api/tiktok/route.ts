@@ -21,7 +21,6 @@ export async function GET(req: NextRequest) {
       try {
         tiktokConnection = new TikTokLiveConnection(username, {
           processInitialData: false,
-          enableExtendedGiftInfo: true,
         });
 
         tiktokConnection.on(WebcastEvent.CHAT, (data: any) => {
