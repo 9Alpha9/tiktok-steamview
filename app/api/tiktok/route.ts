@@ -126,17 +126,35 @@ export async function GET(req: NextRequest) {
         const nickname = owner.nickname || owner.display_id || username;
 
         const streamUrlObj = roomData.stream_url || liveRoom.stream_url || room.stream_url || {};
-        const hlsPullUrl = streamUrlObj.hls_pull_url
+        let hlsPullUrl = streamUrlObj.hls_pull_url
           || streamUrlObj.HlsUrl
           || streamUrlObj.hls_pull_url_map?.["FULL_HD1"]
           || streamUrlObj.hls_pull_url_map?.["HD1"]
           || streamUrlObj.hls_pull_url_map?.["SD1"]
           || "";
-        const flvPullUrl = streamUrlObj.flv_pull_url?.FULL_HD1
+        let flvPullUrl = streamUrlObj.flv_pull_url?.FULL_HD1
           || streamUrlObj.flv_pull_url?.HD1
           || streamUrlObj.flv_pull_url?.SD1
           || streamUrlObj.FlvUrl
           || "";
+
+        if (!hlsPullUrl && streamUrlObj.live_core_sdk_data?.pull_data?.stream_data) {
+          try {
+            const streamData = JSON.parse(streamUrlObj.live_core_sdk_data.pull_data.stream_data);
+            hlsPullUrl = streamData.data?.origin?.main?.hls
+              || streamData.data?.FULL_HD1?.main?.hls
+              || streamData.data?.HD1?.main?.hls
+              || streamData.data?.SD1?.main?.hls
+              || hlsPullUrl;
+            flvPullUrl = streamData.data?.origin?.main?.flv
+              || streamData.data?.FULL_HD1?.main?.flv
+              || streamData.data?.HD1?.main?.flv
+              || streamData.data?.SD1?.main?.flv
+              || flvPullUrl;
+          } catch (e) {
+            console.error("[TikTok] Failed to parse stream_data JSON:", e);
+          }
+        }
 
         const coverUrlObj = roomData.cover || liveRoom.cover || room.cover || {};
         const coverUrl = coverUrlObj.url_list?.[0] || coverUrlObj.urlList?.[0] || (typeof coverUrlObj === "string" ? coverUrlObj : "");
