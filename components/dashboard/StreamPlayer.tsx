@@ -80,7 +80,7 @@ export function StreamPlayer() {
       hls.loadSource(hlsUrl);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => {});
+        video.play().catch(() => { });
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
@@ -94,7 +94,7 @@ export function StreamPlayer() {
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = hlsUrl;
       video.addEventListener("loadedmetadata", () => {
-        video.play().catch(() => {});
+        video.play().catch(() => { });
       });
       return () => {
         video.removeAttribute("src");
@@ -138,7 +138,7 @@ export function StreamPlayer() {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      video.play().catch(() => {});
+      video.play().catch(() => { });
       setIsPlaying(true);
     } else {
       video.pause();
@@ -265,9 +265,6 @@ export function StreamPlayer() {
           >
             <div className="bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-8 pb-3 px-4">
               <div className="flex items-center gap-3">
-                <button onClick={togglePlay} className="text-white/80 hover:text-white transition-colors">
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                </button>
                 <button onClick={toggleMute} className="text-white/80 hover:text-white transition-colors">
                   {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                 </button>
