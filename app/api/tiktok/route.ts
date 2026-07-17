@@ -119,7 +119,8 @@ export async function GET(req: NextRequest) {
         const avatarUrl = owner.avatar_thumb?.url_list?.[0]
           || owner.avatarThumb?.urlList?.[0]
           || owner.avatar_medium?.url_list?.[0]
-          || owner.avatarMedium?.urlList?.[0];
+          || owner.avatarMedium?.urlList?.[0]
+          || (typeof owner.avatar_url === "string" ? owner.avatar_url : undefined);
         
         const title = roomData.title || liveRoom.title || room.title || "";
         const nickname = owner.nickname || owner.display_id || username;
@@ -137,10 +138,8 @@ export async function GET(req: NextRequest) {
           || streamUrlObj.FlvUrl
           || "";
 
-        const coverUrl = roomData.cover
-          || liveRoom.cover
-          || room.cover
-          || "";
+        const coverUrlObj = roomData.cover || liveRoom.cover || room.cover || {};
+        const coverUrl = coverUrlObj.url_list?.[0] || coverUrlObj.urlList?.[0] || (typeof coverUrlObj === "string" ? coverUrlObj : "");
 
         const payload = JSON.stringify({ 
           type: "connected", 

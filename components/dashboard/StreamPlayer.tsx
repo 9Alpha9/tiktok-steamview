@@ -186,7 +186,7 @@ export function StreamPlayer() {
         {activeUsername && hlsUrl && (
           <video
             ref={videoRef}
-            className="h-full w-full object-contain"
+            className="h-full w-full object-cover"
             playsInline
             muted
             autoPlay

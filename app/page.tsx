@@ -17,21 +17,21 @@ export default function Home() {
         <div className="flex flex-col space-y-6">
           {/* Top Stats Row */}
           <StatCards />
-          
+
           {/* Main Grid: 3 Columns */}
           <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr_320px] gap-6">
             {/* Left Column */}
-            <div className="h-[800px]">
+            <div className="h-[900px]">
               <LiveList />
             </div>
-            
+
             {/* Center Column */}
-            <div className="h-[800px]">
+            <div className="h-[900px]">
               <StreamPlayer />
             </div>
-            
+
             {/* Right Column */}
-            <div className="h-[800px] flex flex-col space-y-6">
+            <div className="h-[900px] flex flex-col space-y-6">
               <div className="flex-1 min-h-0">
                 <LiveDetails />
               </div>
@@ -40,7 +40,7 @@ export default function Home() {
               </div>
             </div>
           </div>
-          
+
           {/* Bottom Grid: 4 Columns */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pb-12">
             <div className="h-[300px] lg:col-span-1">
