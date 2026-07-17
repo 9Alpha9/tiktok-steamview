@@ -351,7 +351,7 @@ export function StreamPlayer() {
               {["#fyp", "#live", "#ngobrol", `#${activeUsername}`, "#malammimggu"].map((tag) => (
                 <span
                   key={tag}
-                  className="text-[11px] text-text-muted bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full cursor-pointer transition-colors"
+                  className="text-[11px] text-text-muted bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full transition-colors"
                 >
                   {tag}
                 </span>
@@ -360,7 +360,7 @@ export function StreamPlayer() {
 
             <div className="flex items-center gap-3">
               <Button
-                className="bg-[#FF0050] hover:bg-[#FF0050]/90 text-white rounded-lg h-9 px-5 text-sm font-semibold"
+                className="bg-[#FF0050] hover:bg-[#FF0050]/90 text-white rounded-lg h-8 px-5 text-sm font-semibold cursor-pointer"
                 onClick={openTikTok}
               >
                 Open in TikTok
@@ -368,7 +368,7 @@ export function StreamPlayer() {
               </Button>
               <Button
                 variant="outline"
-                className={`rounded-lg h-9 px-5 text-sm font-medium ${favorited ? "border-[#FF0050] text-[#FF0050]" : ""}`}
+                className={`rounded-lg h-9 px-5 text-sm font-medium cursor-pointer ${favorited ? "border-[#FF0050] text-[#FF0050]" : ""}`}
                 onClick={() => setFavorited(!favorited)}
               >
                 <Heart className={`w-3.5 h-3.5 mr-1.5 ${favorited ? "fill-[#FF0050]" : ""}`} />

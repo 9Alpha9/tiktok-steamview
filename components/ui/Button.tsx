@@ -11,7 +11,7 @@ interface ButtonProps extends HTMLMotionProps<"button"> {
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = "default", size = "default", children, ...props }, ref) => {
-    
+
     const variants = {
       default: "bg-panel hover:bg-panel-hover text-foreground",
       primary: "bg-brand-primary hover:bg-brand-primary/90 text-white font-medium",
@@ -30,7 +30,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <motion.button
         ref={ref}
-        whileHover={{ scale: 1.02 }}
+        // whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         transition={{ type: "spring", stiffness: 400, damping: 25 }}
         className={cn(

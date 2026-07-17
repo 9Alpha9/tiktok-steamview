@@ -36,6 +36,13 @@ export async function GET(req: NextRequest) {
 
   const customStream = new ReadableStream({
     async start(controller) {
+      const safeEnqueue = (payload: string) => {
+        try { controller.enqueue(encoder.encode(`data: ${payload}\n\n`)); } catch (e) {}
+      };
+      const safeClose = () => {
+        try { controller.close(); } catch (e) {}
+      };
+
       try {
         tiktokConnection = new TikTokLiveConnection(username, {
           processInitialData: true,
@@ -45,7 +52,7 @@ export async function GET(req: NextRequest) {
           const viewers = getNumber(data.viewerCount, data.userCount);
           if (viewers > 0) {
             const payload = JSON.stringify({ type: "stats", data: { viewers } });
-            controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+            safeEnqueue(payload);
           }
         });
 
@@ -53,7 +60,7 @@ export async function GET(req: NextRequest) {
           const likes = getNumber(data.totalLikeCount, data.likeCount);
           if (likes > 0) {
             const payload = JSON.stringify({ type: "stats", data: { likes } });
-            controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+            safeEnqueue(payload);
           }
         });
 
@@ -63,18 +70,18 @@ export async function GET(req: NextRequest) {
           if (data.action === 3) statsUpdate.sharesIncrement = 1;
           if (data.action === 1) statsUpdate.followersIncrement = 1;
           const payload = JSON.stringify({ type: "stats", data: statsUpdate });
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+          safeEnqueue(payload);
         });
 
         tiktokConnection.on(WebcastEvent.STREAM_END, () => {
           const payload = JSON.stringify({ type: "stream_end" });
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-          try { controller.close(); } catch (e) {}
+          safeEnqueue(payload);
+          safeClose();
         });
 
         tiktokConnection.on(WebcastEvent.CHAT, (data: any) => {
           const payload = JSON.stringify({ type: "chat", data });
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+          safeEnqueue(payload);
         });
 
         tiktokConnection.on(WebcastEvent.GIFT, (data: any) => {
@@ -83,23 +90,23 @@ export async function GET(req: NextRequest) {
             return;
           }
           const payload = JSON.stringify({ type: "gift", data });
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+          safeEnqueue(payload);
           const count = getNumber(data.repeatCount, data.comboCount, 1);
           const statsPayload = JSON.stringify({ type: "stats", data: { giftsIncrement: count } });
-          controller.enqueue(encoder.encode(`data: ${statsPayload}\n\n`));
+          safeEnqueue(statsPayload);
         });
 
         tiktokConnection.on(ControlEvent.ERROR, (err: any) => {
           const errorMessage = getErrorMessage(err);
           console.log(`[TikTok] Stream error for ${username}: ${errorMessage}`);
           const payload = JSON.stringify({ type: "error", message: errorMessage });
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+          safeEnqueue(payload);
         });
 
         tiktokConnection.on(ControlEvent.DISCONNECTED, () => {
           const payload = JSON.stringify({ type: "disconnected" });
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-          try { controller.close(); } catch (e) {}
+          safeEnqueue(payload);
+          safeClose();
         });
 
         const connectionState = await tiktokConnection.connect();
@@ -169,23 +176,21 @@ export async function GET(req: NextRequest) {
             coverUrl,
           }
         });
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+        safeEnqueue(payload);
 
       } catch (err: any) {
         const errorMessage = getErrorMessage(err);
         console.log(`[TikTok] Connection failed for ${username}: ${errorMessage}`);
         const payload = JSON.stringify({ type: "error", message: errorMessage });
-        try {
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-          controller.close();
-        } catch (e) {}
+        safeEnqueue(payload);
+        safeClose();
       }
 
       req.signal.addEventListener("abort", () => {
         if (tiktokConnection) {
           tiktokConnection.disconnect();
         }
-        try { controller.close(); } catch (e) {}
+        safeClose();
       });
     },
     cancel() {

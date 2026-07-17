@@ -36,7 +36,7 @@ export function LiveList() {
           className="relative flex w-full items-center rounded-lg border border-[#FF0050]/60 bg-gradient-to-r from-[#FF0050]/10 to-transparent px-3 py-3.5 text-left shadow-[0_0_18px_rgba(255,0,80,0.08)]"
         >
           <span className="absolute -left-px top-3 rounded-r-sm bg-[#FF0050] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">LIVE</span>
-          <Avatar src={streamerInfo?.avatar} alt={activeUsername} fallback={activeUsername?.[0]} size="lg" className="ml-5" isLive />
+          <Avatar src={streamerInfo?.avatar} alt={activeUsername} fallback={activeUsername?.[0]} size="lg" className="ml-8" isLive />
           <div className="ml-3 min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">@{activeUsername}</p>
             <p className="mt-0.5 truncate text-xs text-text-muted">{streamerInfo?.nickname}</p>
