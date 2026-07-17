@@ -314,7 +314,7 @@ export function StreamPlayer() {
                 </div>
                 <span className="text-xs text-text-muted">@{activeUsername}</span>
               </div>
-              <div className="hidden sm:flex items-center gap-3 text-xs text-text-muted">
+              <div className="hidden sm:flex items-center gap-6 text-xs text-text-muted">
                 <div className="flex flex-col items-center">
                   <span className="font-semibold text-white text-sm">Chatting</span>
                   <span>Category</span>
@@ -347,19 +347,37 @@ export function StreamPlayer() {
                 {streamerInfo?.title || `Ngobrol Santai @${activeUsername}`}
               </p>
             </div>
-
-            <div className="flex items-center gap-2 mb-3 flex-wrap">
-              {["#fyp", "#live", "#ngobrol", `#${activeUsername}`, "#malammimggu"].map((tag) => (
-                <span
-                  key={tag}
-                  className="text-[11px] text-text-muted bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full transition-colors"
+            <div className="flex flex-row justify-between items-center">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                {[`#${activeUsername}`].map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-[11px] text-text-muted bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-full transition-colors"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  className="bg-[#FF0050] hover:bg-[#FF0050]/90 text-white rounded-lg h-8 px-5 text-sm font-semibold cursor-pointer"
+                  onClick={openTikTok}
                 >
-                  {tag}
-                </span>
-              ))}
+                  Open in TikTok
+                  <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  className={`rounded-lg h-9 px-5 text-sm font-medium cursor-pointer ${favorited ? "border-[#FF0050] text-[#FF0050]" : ""}`}
+                  onClick={() => setFavorited(!favorited)}
+                >
+                  <Heart className={`w-3.5 h-3.5 mr-1.5 ${favorited ? "fill-[#FF0050]" : ""}`} />
+                  Add to Favorites
+                </Button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            {/* <div className="flex items-center gap-3">
               <Button
                 className="bg-[#FF0050] hover:bg-[#FF0050]/90 text-white rounded-lg h-8 px-5 text-sm font-semibold cursor-pointer"
                 onClick={openTikTok}
@@ -375,7 +393,7 @@ export function StreamPlayer() {
                 <Heart className={`w-3.5 h-3.5 mr-1.5 ${favorited ? "fill-[#FF0050]" : ""}`} />
                 Add to Favorites
               </Button>
-            </div>
+            </div> */}
           </>
         ) : (
           <div className="py-2 text-center">
