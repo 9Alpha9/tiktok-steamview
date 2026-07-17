@@ -12,7 +12,7 @@ import { TikTokLiveProvider } from "@/components/dashboard/TikTokLiveProvider";
 
 export default function Home() {
   return (
-    <TikTokLiveProvider username="babyyaurel">
+    <TikTokLiveProvider username="">
       <DashboardLayout>
         <div className="flex flex-col space-y-6">
           {/* Top Stats Row */}

@@ -1,16 +1,17 @@
 "use client";
 
-import { MessageSquareText, ShieldCheck, User } from "lucide-react";
+import { Circle, MessageSquareText, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { useTikTokLive } from "./TikTokLiveProvider";
 import { useEffect, useState, useRef } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 
 interface ChatEvent {
-  type: "chat" | "gift" | "connected" | "disconnected" | "error";
+  type: "chat" | "gift" | "connected" | "disconnected" | "error" | "stream_end" | "stats";
   data?: any;
-  message?: string;
+  message?: unknown;
   username?: string;
+  roomInfo?: { viewers: number; likes: number; shares?: number; followers?: number; avatarUrl?: string; title?: string; nickname?: string; hlsPullUrl?: string; flvPullUrl?: string; coverUrl?: string };
 }
 
 interface ChatMessage {
@@ -25,14 +26,24 @@ interface ChatMessage {
   giftIcon?: string;
 }
 
+let messageCounter = 0;
+
+function uniqueId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${++messageCounter}`;
+}
+
 export function LiveChat() {
-  const { activeUsername } = useTikTokLive();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { activeUsername, incrementStats, setProfileImage, setStats, setStatus, status, setStreamerDetails, setStreamUrl } = useTikTokLive();
 
   useEffect(() => {
-    if (!activeUsername) return;
+    if (!activeUsername) {
+      setMessages([]);
+      setIsConnected(false);
+      return;
+    }
 
     setMessages([]);
     setIsConnected(false);
@@ -42,33 +53,61 @@ export function LiveChat() {
     eventSource.onmessage = (event) => {
       try {
         const payload: ChatEvent = JSON.parse(event.data);
-        
+
         if (payload.type === "connected") {
           setIsConnected(true);
+          setStatus("live");
+          setProfileImage(payload.roomInfo?.avatarUrl);
+          if (payload.roomInfo?.title || payload.roomInfo?.nickname) {
+            setStreamerDetails({ title: payload.roomInfo.title, nickname: payload.roomInfo.nickname });
+          }
+          if (payload.roomInfo?.hlsPullUrl || payload.roomInfo?.flvPullUrl || payload.roomInfo?.coverUrl) {
+            setStreamUrl({
+              hls: payload.roomInfo.hlsPullUrl || undefined,
+              flv: payload.roomInfo.flvPullUrl || undefined,
+              cover: payload.roomInfo.coverUrl || undefined,
+            });
+          }
           setMessages(prev => [...prev, {
-            id: `sys-conn-${Date.now()}-${Math.random()}`,
+            id: uniqueId("sys-conn"),
             type: "system",
             username: "System",
             message: `Connected to @${activeUsername}'s live stream.`,
             timestamp: Date.now(),
           } as ChatMessage]);
         }
-        
-        if (payload.type === "disconnected") {
+
+        if (payload.type === "disconnected" || payload.type === "stream_end") {
           setIsConnected(false);
-          setMessages(prev => [...prev, {
-            id: `sys-disc-${Date.now()}-${Math.random()}`,
-            type: "system",
-            username: "System",
-            message: "Disconnected from live stream.",
-            timestamp: Date.now(),
-          } as ChatMessage]);
+          setStatus("offline");
+          setMessages([]);
+          setStreamUrl({});
+          eventSource.close();
+        }
+
+        if (payload.type === "stats" && payload.data) {
+          const { giftsIncrement, followersIncrement, sharesIncrement, ...latestStats } = payload.data;
+          if (Object.keys(latestStats).length > 0) setStats(latestStats);
+          incrementStats({
+            gifts: giftsIncrement,
+            followers: followersIncrement,
+            shares: sharesIncrement,
+          });
+        }
+
+        if (payload.type === "connected" && payload.roomInfo) {
+          setStats({
+            viewers: payload.roomInfo.viewers,
+            likes: payload.roomInfo.likes,
+            shares: payload.roomInfo.shares || 0,
+            followers: payload.roomInfo.followers || 0,
+          });
         }
 
         if (payload.type === "chat" && payload.data) {
           setMessages(prev => {
             const updated = [...prev, {
-              id: payload.data?.common?.msgId || payload.data?.msgId || `chat-${Date.now()}`,
+              id: payload.data?.common?.msgId ? `chat-${payload.data.common.msgId}-${Date.now()}` : uniqueId("chat"),
               type: "chat",
               username: payload.data?.user?.displayId || payload.data?.user?.nickname || payload.data?.uniqueId || "User",
               message: payload.data?.content || payload.data?.comment || "",
@@ -84,7 +123,7 @@ export function LiveChat() {
             const giftName = payload.data?.gift?.name || payload.data?.giftName || "a gift";
             const giftCount = payload.data?.comboCount || payload.data?.repeatCount || 1;
             const updated = [...prev, {
-              id: payload.data?.common?.msgId || payload.data?.msgId || `gift-${Date.now()}`,
+              id: payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift"),
               type: "gift",
               username: payload.data?.user?.displayId || payload.data?.user?.nickname || payload.data?.uniqueId || "User",
               message: `Sent ${giftName} x${giftCount}`,
@@ -97,32 +136,30 @@ export function LiveChat() {
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
           });
         }
-        
+
         if (payload.type === "error") {
-          console.error("TikTok live error:", payload.message);
-          setMessages(prev => [...prev, {
-            id: `sys-err-${Date.now()}-${Math.random()}`,
-            type: "system",
-            username: "Error",
-            message: payload.message || "Connection error",
-            timestamp: Date.now(),
-          } as ChatMessage]);
+          setMessages([]);
+          setIsConnected(false);
+          setStatus("offline");
+          setStreamUrl({});
+          eventSource.close();
         }
       } catch (err) {
         console.error("Failed to parse SSE message", err);
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.error("EventSource failed:", err);
+    eventSource.onerror = () => {
       setIsConnected(false);
+      setStatus("offline");
+      setMessages([]);
       eventSource.close();
     };
 
     return () => {
       eventSource.close();
     };
-  }, [activeUsername]);
+  }, [activeUsername, incrementStats, setProfileImage, setStats, setStatus, setStreamerDetails, setStreamUrl]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -143,30 +180,40 @@ export function LiveChat() {
         </div>
       </div>
 
-      <div 
+      <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar"
       >
         {messages.length === 0 && (
-          <div className="h-full flex items-center justify-center text-xs text-zinc-500">
-            Waiting for messages...
+          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+            <Circle className="mb-3 h-7 w-7 text-text-muted" />
+            <p className="text-sm font-medium text-white">
+              {!activeUsername ? "Enter a username to start" : status === "offline" ? "No active LIVE chat" : "Waiting for live chat"}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-text-muted">
+              {!activeUsername
+                ? "Search for a TikTok account in the search bar above."
+                : status === "offline"
+                  ? "Chat appears after a LIVE stream is confirmed."
+                  : "Messages will appear when the connection is ready."}
+            </p>
           </div>
         )}
-        
+
         {messages.map((msg) => (
           <div key={msg.id} className={`flex items-start space-x-2 animate-in fade-in slide-in-from-bottom-2 ${msg.type === 'gift' ? 'bg-[#FF0050]/10 p-2 rounded-lg border border-[#FF0050]/20' : ''}`}>
             {msg.type !== 'system' ? (
-              <Avatar 
-                src={msg.avatarUrl || `https://api.dicebear.com/7.x/notionists/svg?seed=${msg.username}`} 
-                fallback={msg.username[0]} 
-                size="sm" 
+              <Avatar
+                src={msg.avatarUrl || `https://api.dicebear.com/7.x/notionists/svg?seed=${msg.username}`}
+                fallback={msg.username[0]}
+                size="sm"
               />
             ) : (
               <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0">
                 <ShieldCheck className="h-4 w-4 text-zinc-400" />
               </div>
             )}
-            
+
             <div className="flex flex-col flex-1">
               <div className="flex items-center space-x-2">
                 <span className={`text-xs font-semibold ${msg.type === 'system' ? 'text-zinc-400' : 'text-zinc-300'}`}>
@@ -182,13 +229,6 @@ export function LiveChat() {
             </div>
           </div>
         ))}
-      </div>
-      
-      <div className="p-3 border-t border-border/50 bg-[#171923]">
-        <div className="w-full bg-[#0e1015] rounded-full py-2 px-4 text-xs text-text-muted flex items-center justify-between">
-          <span>Log in to chat</span>
-          <User className="h-4 w-4" />
-        </div>
       </div>
     </Card>
   );
