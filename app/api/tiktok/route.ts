@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TikTokLiveConnection, WebcastEvent, ControlEvent } from "tiktok-live-connector";
 
-// Ensure this route is evaluated dynamically, not statically built
 export const dynamic = "force-dynamic";
+
+const CONNECT_TIMEOUT_MS = 30_000;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
@@ -23,144 +24,196 @@ function getNumber(...values: unknown[]): number {
   return 0;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
+function deepExtractStreamUrl(obj: any): { hls: string; flv: string } {
+  if (!obj || typeof obj !== "object") return { hls: "", flv: "" };
+
+  let hls = obj.hls_pull_url
+    || obj.HlsUrl
+    || obj.hls_pull_url_map?.["FULL_HD1"]
+    || obj.hls_pull_url_map?.["HD1"]
+    || obj.hls_pull_url_map?.["SD1"]
+    || "";
+  let flv = obj.flv_pull_url?.FULL_HD1
+    || obj.flv_pull_url?.HD1
+    || obj.flv_pull_url?.SD1
+    || obj.FlvUrl
+    || "";
+
+  if (!hls && obj.live_core_sdk_data?.pull_data?.stream_data) {
+    try {
+      const streamData = JSON.parse(obj.live_core_sdk_data.pull_data.stream_data);
+      hls = streamData.data?.origin?.main?.hls
+        || streamData.data?.FULL_HD1?.main?.hls
+        || streamData.data?.HD1?.main?.hls
+        || streamData.data?.SD1?.main?.hls
+        || streamData.data?.hd?.main?.hls
+        || streamData.data?.ld?.main?.hls
+        || "";
+      flv = streamData.data?.origin?.main?.flv
+        || streamData.data?.FULL_HD1?.main?.flv
+        || streamData.data?.HD1?.main?.flv
+        || streamData.data?.SD1?.main?.flv
+        || streamData.data?.hd?.main?.flv
+        || streamData.data?.ld?.main?.flv
+        || "";
+    } catch (e) {
+      console.error("[TikTok] Failed to parse stream_data JSON:", e);
+    }
+  }
+
+  return { hls, flv };
+}
 
 export async function GET(req: NextRequest) {
   const username = req.nextUrl.searchParams.get("username");
-  
+
   if (!username) {
     return new NextResponse("Username is required", { status: 400 });
   }
 
   const encoder = new TextEncoder();
   let tiktokConnection: TikTokLiveConnection | null = null;
+  let closed = false;
 
   const customStream = new ReadableStream({
-    async start(controller) {
+    start(controller) {
       const safeEnqueue = (payload: string) => {
+        if (closed) return;
         try { controller.enqueue(encoder.encode(`data: ${payload}\n\n`)); } catch (e) {}
       };
       const safeClose = () => {
+        if (closed) return;
+        closed = true;
         try { controller.close(); } catch (e) {}
       };
 
-      try {
-        tiktokConnection = new TikTokLiveConnection(username, {
-          processInitialData: true,
-        });
+      const cleanup = () => {
+        if (tiktokConnection) {
+          try { tiktokConnection.disconnect(); } catch (e) {}
+        }
+        safeClose();
+      };
+
+      req.signal.addEventListener("abort", cleanup);
+
+      safeEnqueue(JSON.stringify({ type: "connecting", username }));
+
+      (async () => {
+        try {
+          tiktokConnection = new TikTokLiveConnection(username, {
+            processInitialData: true,
+          });
 
         tiktokConnection.on(WebcastEvent.ROOM_USER, (data: any) => {
           const viewers = getNumber(data.viewerCount, data.userCount);
           if (viewers > 0) {
-            const payload = JSON.stringify({ type: "stats", data: { viewers } });
-            safeEnqueue(payload);
+            safeEnqueue(JSON.stringify({ type: "stats", data: { viewers } }));
           }
         });
 
         tiktokConnection.on(WebcastEvent.LIKE, (data: any) => {
           const likes = getNumber(data.totalLikeCount, data.likeCount);
           if (likes > 0) {
-            const payload = JSON.stringify({ type: "stats", data: { likes } });
-            safeEnqueue(payload);
+            safeEnqueue(JSON.stringify({ type: "stats", data: { likes } }));
           }
         });
 
         tiktokConnection.on(WebcastEvent.SOCIAL, (data: any) => {
-          // data.action === 1 means subscribe/follow, 3 means share
           const statsUpdate: any = {};
           if (data.action === 3) statsUpdate.sharesIncrement = 1;
           if (data.action === 1) statsUpdate.followersIncrement = 1;
-          const payload = JSON.stringify({ type: "stats", data: statsUpdate });
-          safeEnqueue(payload);
+          safeEnqueue(JSON.stringify({ type: "stats", data: statsUpdate }));
         });
 
         tiktokConnection.on(WebcastEvent.STREAM_END, () => {
-          const payload = JSON.stringify({ type: "stream_end" });
-          safeEnqueue(payload);
+          safeEnqueue(JSON.stringify({ type: "stream_end" }));
           safeClose();
         });
 
         tiktokConnection.on(WebcastEvent.CHAT, (data: any) => {
-          const payload = JSON.stringify({ type: "chat", data });
-          safeEnqueue(payload);
+          safeEnqueue(JSON.stringify({ type: "chat", data }));
         });
 
         tiktokConnection.on(WebcastEvent.GIFT, (data: any) => {
-          if (data.giftType === 1 && !data.repeatEnd) {
-            // Wait for repeatEnd for combo gifts, or handle individually
-            return;
-          }
-          const payload = JSON.stringify({ type: "gift", data });
-          safeEnqueue(payload);
+          if (data.giftType === 1 && !data.repeatEnd) return;
+          safeEnqueue(JSON.stringify({ type: "gift", data }));
           const count = getNumber(data.repeatCount, data.comboCount, 1);
-          const statsPayload = JSON.stringify({ type: "stats", data: { giftsIncrement: count } });
-          safeEnqueue(statsPayload);
+          safeEnqueue(JSON.stringify({ type: "stats", data: { giftsIncrement: count } }));
         });
 
         tiktokConnection.on(ControlEvent.ERROR, (err: any) => {
           const errorMessage = getErrorMessage(err);
           console.log(`[TikTok] Stream error for ${username}: ${errorMessage}`);
-          const payload = JSON.stringify({ type: "error", message: errorMessage });
-          safeEnqueue(payload);
+          safeEnqueue(JSON.stringify({ type: "error", message: errorMessage }));
         });
 
         tiktokConnection.on(ControlEvent.DISCONNECTED, () => {
-          const payload = JSON.stringify({ type: "disconnected" });
-          safeEnqueue(payload);
+          safeEnqueue(JSON.stringify({ type: "disconnected" }));
           safeClose();
         });
 
-        const connectionState = await tiktokConnection.connect();
+        console.log(`[TikTok] Connecting to ${username}...`);
+        const connectionState = await withTimeout(
+          tiktokConnection.connect(),
+          CONNECT_TIMEOUT_MS,
+          `connect(${username})`,
+        );
+        console.log(`[TikTok] Connected to ${username}, extracting room info...`);
+
         const roomInfo = (connectionState as any)?.roomInfo || {};
         const roomData = roomInfo.data || roomInfo;
         const liveRoom = roomData.liveRoom || roomData.live_room || {};
         const room = roomData.room || liveRoom.room || liveRoom || roomData;
         const stats = roomData.stats || liveRoom.stats || room.stats || {};
         const owner = roomData.owner || liveRoom.owner || room.owner || {};
+
         const avatarUrl = owner.avatar_thumb?.url_list?.[0]
           || owner.avatarThumb?.urlList?.[0]
           || owner.avatar_medium?.url_list?.[0]
           || owner.avatarMedium?.urlList?.[0]
           || (typeof owner.avatar_url === "string" ? owner.avatar_url : undefined);
-        
+
         const title = roomData.title || liveRoom.title || room.title || "";
         const nickname = owner.nickname || owner.display_id || username;
 
-        const streamUrlObj = roomData.stream_url || liveRoom.stream_url || room.stream_url || {};
-        let hlsPullUrl = streamUrlObj.hls_pull_url
-          || streamUrlObj.HlsUrl
-          || streamUrlObj.hls_pull_url_map?.["FULL_HD1"]
-          || streamUrlObj.hls_pull_url_map?.["HD1"]
-          || streamUrlObj.hls_pull_url_map?.["SD1"]
-          || "";
-        let flvPullUrl = streamUrlObj.flv_pull_url?.FULL_HD1
-          || streamUrlObj.flv_pull_url?.HD1
-          || streamUrlObj.flv_pull_url?.SD1
-          || streamUrlObj.FlvUrl
-          || "";
+        let streamUrlObj = roomData.stream_url || liveRoom.stream_url || room.stream_url || {};
+        let { hls: hlsPullUrl, flv: flvPullUrl } = deepExtractStreamUrl(streamUrlObj);
 
-        if (!hlsPullUrl && streamUrlObj.live_core_sdk_data?.pull_data?.stream_data) {
-          try {
-            const streamData = JSON.parse(streamUrlObj.live_core_sdk_data.pull_data.stream_data);
-            hlsPullUrl = streamData.data?.origin?.main?.hls
-              || streamData.data?.FULL_HD1?.main?.hls
-              || streamData.data?.HD1?.main?.hls
-              || streamData.data?.SD1?.main?.hls
-              || hlsPullUrl;
-            flvPullUrl = streamData.data?.origin?.main?.flv
-              || streamData.data?.FULL_HD1?.main?.flv
-              || streamData.data?.HD1?.main?.flv
-              || streamData.data?.SD1?.main?.flv
-              || flvPullUrl;
-          } catch (e) {
-            console.error("[TikTok] Failed to parse stream_data JSON:", e);
+        if (!hlsPullUrl) {
+          const altStreamUrl = room.stream_url || liveRoom.stream_url || roomData.stream_url || {};
+          const alt = deepExtractStreamUrl(altStreamUrl);
+          if (alt.hls) {
+            hlsPullUrl = alt.hls;
+            flvPullUrl = alt.flv;
           }
         }
+
+        if (!hlsPullUrl) {
+          for (const candidate of [roomData, liveRoom, room]) {
+            if (candidate?.stream_url) {
+              const r = deepExtractStreamUrl(candidate.stream_url);
+              if (r.hls) { hlsPullUrl = r.hls; flvPullUrl = r.flv; break; }
+            }
+          }
+        }
+
+        console.log(`[TikTok] ${username} hlsPullUrl: ${hlsPullUrl ? "found" : "EMPTY"}`);
 
         const coverUrlObj = roomData.cover || liveRoom.cover || room.cover || {};
         const coverUrl = coverUrlObj.url_list?.[0] || coverUrlObj.urlList?.[0] || (typeof coverUrlObj === "string" ? coverUrlObj : "");
 
-        const payload = JSON.stringify({ 
-          type: "connected", 
+        safeEnqueue(JSON.stringify({
+          type: "connected",
           username,
           roomInfo: {
             viewers: getNumber(
@@ -192,28 +245,21 @@ export async function GET(req: NextRequest) {
             flvPullUrl,
             coverUrl,
           }
-        });
-        safeEnqueue(payload);
+        }));
 
-      } catch (err: any) {
-        const errorMessage = getErrorMessage(err);
-        console.log(`[TikTok] Connection failed for ${username}: ${errorMessage}`);
-        const payload = JSON.stringify({ type: "error", message: errorMessage });
-        safeEnqueue(payload);
-        safeClose();
-      }
-
-      req.signal.addEventListener("abort", () => {
-        if (tiktokConnection) {
-          tiktokConnection.disconnect();
+        } catch (err: any) {
+          const errorMessage = getErrorMessage(err);
+          console.log(`[TikTok] Connection failed for ${username}: ${errorMessage}`);
+          safeEnqueue(JSON.stringify({ type: "error", message: errorMessage }));
+          safeClose();
         }
-        safeClose();
-      });
+      })();
     },
     cancel() {
       if (tiktokConnection) {
-        tiktokConnection.disconnect();
+        try { tiktokConnection.disconnect(); } catch (e) {}
       }
+      closed = true;
     }
   });
 

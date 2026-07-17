@@ -53,6 +53,7 @@ export function StreamPlayer() {
       setStreamStartTime(Date.now());
       setElapsed(0);
       setVideoError(false);
+      setIsMuted(true);
     }
   }, [activeUsername]);
 
@@ -188,6 +189,7 @@ export function StreamPlayer() {
             ref={videoRef}
             className="h-full w-full object-contain"
             playsInline
+            muted
             autoPlay
           />
         )}

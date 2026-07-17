@@ -3,7 +3,7 @@
 import { Circle, MessageSquareText, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { useTikTokLive } from "./TikTokLiveProvider";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 
 interface ChatEvent {
@@ -37,9 +37,23 @@ export function LiveChat() {
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { activeUsername, incrementStats, setProfileImage, setStats, setStatus, status, setStreamerDetails, setStreamUrl } = useTikTokLive();
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cleanup = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!activeUsername) {
+      cleanup();
       setMessages([]);
       setIsConnected(false);
       return;
@@ -48,13 +62,17 @@ export function LiveChat() {
     setMessages([]);
     setIsConnected(false);
 
+    let settled = false;
+
     const eventSource = new EventSource(`/api/tiktok?username=${encodeURIComponent(activeUsername)}`);
+    eventSourceRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
       try {
         const payload: ChatEvent = JSON.parse(event.data);
 
         if (payload.type === "connected") {
+          settled = true;
           setIsConnected(true);
           setStatus("live");
           setProfileImage(payload.roomInfo?.avatarUrl);
@@ -68,6 +86,12 @@ export function LiveChat() {
               cover: payload.roomInfo.coverUrl || undefined,
             });
           }
+          setStats({
+            viewers: payload.roomInfo?.viewers || 0,
+            likes: payload.roomInfo?.likes || 0,
+            shares: payload.roomInfo?.shares || 0,
+            followers: payload.roomInfo?.followers || 0,
+          });
           setMessages(prev => [...prev, {
             id: uniqueId("sys-conn"),
             type: "system",
@@ -78,6 +102,7 @@ export function LiveChat() {
         }
 
         if (payload.type === "disconnected" || payload.type === "stream_end") {
+          settled = true;
           setIsConnected(false);
           setStatus("offline");
           setMessages([]);
@@ -92,15 +117,6 @@ export function LiveChat() {
             gifts: giftsIncrement,
             followers: followersIncrement,
             shares: sharesIncrement,
-          });
-        }
-
-        if (payload.type === "connected" && payload.roomInfo) {
-          setStats({
-            viewers: payload.roomInfo.viewers,
-            likes: payload.roomInfo.likes,
-            shares: payload.roomInfo.shares || 0,
-            followers: payload.roomInfo.followers || 0,
           });
         }
 
@@ -138,6 +154,7 @@ export function LiveChat() {
         }
 
         if (payload.type === "error") {
+          settled = true;
           setMessages([]);
           setIsConnected(false);
           setStatus("offline");
@@ -150,16 +167,18 @@ export function LiveChat() {
     };
 
     eventSource.onerror = () => {
-      setIsConnected(false);
-      setStatus("offline");
-      setMessages([]);
       eventSource.close();
+      if (!settled) {
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+        }, 5000);
+      } else {
+        setIsConnected(false);
+      }
     };
 
-    return () => {
-      eventSource.close();
-    };
-  }, [activeUsername, incrementStats, setProfileImage, setStats, setStatus, setStreamerDetails, setStreamUrl]);
+    return cleanup;
+  }, [activeUsername, cleanup, incrementStats, setProfileImage, setStats, setStatus, setStreamerDetails, setStreamUrl]);
 
   useEffect(() => {
     if (scrollRef.current) {
