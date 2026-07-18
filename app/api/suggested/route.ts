@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     const conn = new TikTokLiveConnection("__temp__", { processInitialData: false });
     const webClient = (conn as any).webClient;
 
-    const html: string = await webClient.getHtmlFromTikTokWebsite("discover?lang=en");
+    const html: string = await webClient.getHtmlFromTikTokWebsite("discover", { searchParams: { lang: "en" } });
 
     const sigiMatch = html.match(/<script id="SIGI_STATE" type="application\/json">(.*?)<\/script>/);
     if (!sigiMatch) {
