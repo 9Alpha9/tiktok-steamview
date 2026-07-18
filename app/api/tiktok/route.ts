@@ -178,6 +178,7 @@ export async function GET(req: NextRequest) {
         console.log(`[TikTok] Connected to ${username}, extracting room info...`);
 
         const roomInfo = (connectionState as any)?.roomInfo || {};
+
         const roomData = roomInfo.data || roomInfo;
         const liveRoom = roomData.liveRoom || roomData.live_room || {};
         const room = roomData.room || liveRoom.room || liveRoom || roomData;
@@ -190,8 +191,39 @@ export async function GET(req: NextRequest) {
           || owner.avatarMedium?.urlList?.[0]
           || (typeof owner.avatar_url === "string" ? owner.avatar_url : undefined);
 
-        const title = roomData.title || liveRoom.title || room.title || "";
+        let title = roomData.title || liveRoom.title || room.title || "";
         const nickname = owner.nickname || owner.display_id || username;
+
+        if (!title) {
+          try {
+            const webClient = (tiktokConnection as any).webClient;
+            const apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
+              ...webClient.clientParams,
+              uniqueId: username,
+              sourceType: "54",
+            });
+            const apiRoom = apiData?.data?.liveRoom || apiData?.data?.live_room || {};
+            title = apiRoom.title || "";
+          } catch (e: any) {}
+        }
+
+        if (!title) {
+          try {
+            const webClient = (tiktokConnection as any).webClient;
+            const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
+            const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"/i);
+            if (ogTitle?.[1]) {
+              title = ogTitle[1].replace(/\s*on TikTok\s*$/, "").trim();
+            }
+            if (!title) {
+              const pageTitle = html.match(/<title>([^<]*)<\/title>/i);
+              if (pageTitle?.[1]) {
+                title = pageTitle[1].replace(/\s*on TikTok\s*$/, "").replace(/\s*\|\s*TikTok\s*$/, "").trim();
+              }
+            }
+          } catch (e: any) {}
+        }
+        console.log(`[TikTok] ${username} title:`, title || "(empty)");
 
         let streamUrlObj = roomData.stream_url || liveRoom.stream_url || room.stream_url || {};
         let { hls: hlsPullUrl, flv: flvPullUrl } = deepExtractStreamUrl(streamUrlObj);
