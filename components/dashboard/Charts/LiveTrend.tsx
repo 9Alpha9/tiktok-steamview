@@ -25,23 +25,23 @@ export function LiveTrend() {
           7 Days <ChevronDown className="w-3 h-3 ml-1" />
         </button>
       </div>
-      
+
       <div className="flex-1 w-full min-h-[200px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-            <XAxis 
-              dataKey="name" 
-              stroke="#9ca3af" 
-              fontSize={10} 
-              tickLine={false} 
+            <XAxis
+              dataKey="name"
+              stroke="#9ca3af"
+              fontSize={10}
+              tickLine={false}
               axisLine={false}
               dy={10}
             />
-            <YAxis 
-              stroke="#9ca3af" 
-              fontSize={10} 
-              tickLine={false} 
+            <YAxis
+              stroke="#9ca3af"
+              fontSize={10}
+              tickLine={false}
               axisLine={false}
               tickFormatter={(value) => `${value / 1000}K`}
             />
@@ -51,13 +51,13 @@ export function LiveTrend() {
               labelStyle={{ color: '#9ca3af', marginBottom: '4px' }}
               cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }}
             />
-            <Line 
-              type="monotone" 
-              dataKey="viewers" 
-              stroke="#FF0050" 
-              strokeWidth={2} 
-              dot={{ fill: '#FF0050', strokeWidth: 2, r: 3, stroke: '#11131A' }} 
-              activeDot={{ r: 5, strokeWidth: 0 }} 
+            <Line
+              type="monotone"
+              dataKey="viewers"
+              stroke="#FF0050"
+              strokeWidth={2}
+              dot={{ fill: '#FF0050', strokeWidth: 2, r: 3, stroke: '#11131A' }}
+              activeDot={{ r: 5, strokeWidth: 0 }}
             />
           </LineChart>
         </ResponsiveContainer>

@@ -115,7 +115,14 @@ export async function GET(req: NextRequest) {
           });
 
         tiktokConnection.on(WebcastEvent.ROOM_USER, (data: any) => {
-          const viewers = getNumber(data.viewerCount, data.userCount);
+          const viewers = getNumber(data.viewerCount, data.userCount, data.total);
+          if (viewers > 0) {
+            safeEnqueue(JSON.stringify({ type: "stats", data: { viewers } }));
+          }
+        });
+
+        tiktokConnection.on(WebcastEvent.MEMBER, (data: any) => {
+          const viewers = getNumber(data.memberCount);
           if (viewers > 0) {
             safeEnqueue(JSON.stringify({ type: "stats", data: { viewers } }));
           }

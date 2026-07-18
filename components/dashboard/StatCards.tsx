@@ -63,7 +63,7 @@ const stats = [
 
 export function StatCards() {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
       {stats.map((stat, i) => (
         <Card key={i} className="p-4 flex flex-col justify-between hover:border-white/10 transition-colors">
           <div className="flex items-start justify-between mb-4">
@@ -79,16 +79,16 @@ export function StatCards() {
               <span className="text-2xl font-bold">{stat.value}</span>
             </div>
             <p className="text-xs text-text-muted mt-1">{stat.subtitle}</p>
-            
+
             {stat.progress !== undefined && (
               <div className="w-full h-1 bg-white/5 rounded-full mt-3 overflow-hidden">
-                <div 
-                  className={cn("h-full rounded-full", stat.title === "LIVE NOW" ? "bg-brand-primary" : "bg-text-muted")} 
+                <div
+                  className={cn("h-full rounded-full", stat.title === "LIVE NOW" ? "bg-brand-primary" : "bg-text-muted")}
                   style={{ width: `${stat.progress}%` }}
                 />
               </div>
             )}
-            
+
             {stat.trend && (
               <div className={cn("flex items-center text-xs mt-3 font-medium", stat.trend.up ? "text-chart-green" : "text-brand-primary")}>
                 {stat.trend.up ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}

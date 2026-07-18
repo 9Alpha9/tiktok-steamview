@@ -24,6 +24,7 @@ interface ChatMessage {
   giftName?: string;
   giftCount?: number;
   giftIcon?: string;
+  userLevel?: number;
 }
 
 let messageCounter = 0;
@@ -122,12 +123,14 @@ export function LiveChat() {
 
         if (payload.type === "chat" && payload.data) {
           setMessages(prev => {
+            const user = payload.data?.user;
             const updated = [...prev, {
               id: payload.data?.common?.msgId ? `chat-${payload.data.common.msgId}-${Date.now()}` : uniqueId("chat"),
               type: "chat",
-              username: payload.data?.user?.displayId || payload.data?.user?.nickname || payload.data?.uniqueId || "User",
+              username: user?.displayId || user?.nickname || payload.data?.uniqueId || "User",
               message: payload.data?.content || payload.data?.comment || "",
-              avatarUrl: payload.data?.user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
+              avatarUrl: user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
+              userLevel: user?.payGrade?.level || user?.anchorLevel?.level || undefined,
               timestamp: Date.now(),
             } as ChatMessage];
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
@@ -136,17 +139,19 @@ export function LiveChat() {
 
         if (payload.type === "gift" && payload.data) {
           setMessages(prev => {
+            const user = payload.data?.user;
             const giftName = payload.data?.gift?.name || payload.data?.giftName || "a gift";
             const giftCount = payload.data?.comboCount || payload.data?.repeatCount || 1;
             const updated = [...prev, {
               id: payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift"),
               type: "gift",
-              username: payload.data?.user?.displayId || payload.data?.user?.nickname || payload.data?.uniqueId || "User",
+              username: user?.displayId || user?.nickname || payload.data?.uniqueId || "User",
               message: `Sent ${giftName} x${giftCount}`,
-              avatarUrl: payload.data?.user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
+              avatarUrl: user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
               giftName: giftName,
               giftCount: giftCount,
               giftIcon: payload.data?.gift?.image?.urlList?.[0] || payload.data?.giftPictureUrl,
+              userLevel: user?.payGrade?.level || user?.anchorLevel?.level || undefined,
               timestamp: Date.now(),
             } as ChatMessage];
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
@@ -238,6 +243,11 @@ export function LiveChat() {
                 <span className={`text-xs font-semibold ${msg.type === 'system' ? 'text-zinc-400' : 'text-zinc-300'}`}>
                   {msg.username}
                 </span>
+                {msg.userLevel && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#FF0050]/20 text-[#FF0050] leading-none">
+                    Lv.{msg.userLevel}
+                  </span>
+                )}
               </div>
               <span className={`text-sm ${msg.type === 'gift' ? 'text-[#FF0050] font-medium flex items-center gap-1' : 'text-white'}`}>
                 {msg.message}

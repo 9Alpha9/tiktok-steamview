@@ -29,7 +29,7 @@ export function LiveDetails() {
         <Sparkles className="w-4 h-4 text-[#FF0050]" />
         <h3 className="font-bold text-sm">Live Details</h3>
       </div>
-      
+
       {status !== "offline" ? <div className="flex-1 overflow-y-auto p-0">
         {streamerInfo.title && (
           <div className="px-4 py-3 border-b border-border/30 bg-white/[0.02]">
