@@ -27,7 +27,6 @@ export function LiveList() {
   const isLive = status === "live";
   const [suggested, setSuggested] = useState<SuggestedLive[]>([]);
   const [loading, setLoading] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchSuggested = useCallback(async () => {
@@ -36,9 +35,7 @@ export function LiveList() {
       const res = await fetch("/api/suggested");
       const data = await res.json();
       setSuggested(data.lives || []);
-      setLastRefresh(Date.now());
     } catch {
-      // keep previous data
     } finally {
       setLoading(false);
     }
@@ -79,9 +76,9 @@ export function LiveList() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
         {isLive && (
-          <div className="mb-3">
+          <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2 px-1">Current Stream</p>
             <motion.div
               key={activeUsername}
@@ -105,53 +102,55 @@ export function LiveList() {
 
         {filtered.length > 0 && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2 px-1">
-              Suggested Lives
-            </p>
-            <AnimatePresence mode="popLayout">
-              {filtered.slice(0, 15).map((live) => (
-                <motion.button
-                  key={live.username}
-                  layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.25 }}
-                  onClick={() => setActiveUsername(live.username)}
-                  className="relative flex w-full items-center rounded-lg px-3 py-2.5 text-left hover:bg-white/5 transition-colors group"
-                >
-                  <span className="absolute left-0 top-2.5 rounded-r-sm bg-[#FF0050] px-1 py-0.5 text-[9px] font-bold leading-none text-white opacity-0 group-hover:opacity-100 transition-opacity">LIVE</span>
-                  <div className="relative">
-                    <Avatar
-                      src={live.avatar}
-                      alt={live.username}
-                      fallback={live.username[0]}
-                      size="sm"
-                    />
-                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#11131A] bg-[#FF0050]" />
-                  </div>
-                  <div className="ml-2.5 min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-white group-hover:text-[#00F2FE] transition-colors">
-                      @{live.username}
-                    </p>
-                    <p className="truncate text-[11px] text-text-muted">{live.nickname}</p>
-                  </div>
-                  <div className="ml-2 flex shrink-0 items-center gap-1 text-[11px] font-medium text-zinc-400">
-                    <Eye className="h-3 w-3" />
-                    <span>{formatViewers(live.viewers)}</span>
-                  </div>
-                </motion.button>
-              ))}
-            </AnimatePresence>
+               <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2 px-1">
+               Live Candidates
+             </p>
+            <div className="space-y-2">
+              <AnimatePresence mode="popLayout">
+                {filtered.slice(0, 15).map((live) => (
+                  <motion.button
+                    key={live.username}
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.25 }}
+                    onClick={() => setActiveUsername(live.username)}
+                    className="relative flex w-full items-center rounded-lg border border-white/5 bg-white/[0.02] px-3 py-3 text-left hover:bg-white/5 hover:border-white/10 transition-all group"
+                  >
+                    <span className="absolute -left-px top-2.5 rounded-r-sm bg-blue-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">CHECK</span>
+                    <div className="relative ml-5">
+                      <Avatar
+                        src={live.avatar}
+                        alt={live.username}
+                        fallback={live.username[0]}
+                        size="lg"
+                      />
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#11131A] bg-[#FF0050]" />
+                    </div>
+                    <div className="ml-3 min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-white group-hover:text-[#00F2FE] transition-colors">
+                        @{live.username}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-text-muted">{live.nickname}</p>
+                    </div>
+                    <div className="ml-2 flex shrink-0 items-center gap-1.5 text-xs font-medium text-zinc-400">
+                      <Eye className="h-3.5 w-3.5" />
+                      <span>{formatViewers(live.viewers)}</span>
+                    </div>
+                  </motion.button>
+                ))}
+              </AnimatePresence>
+            </div>
           </div>
         )}
 
         {!isLive && filtered.length === 0 && !loading && (
           <div className="flex h-full flex-col items-center justify-center px-6 text-center">
             <Radio className="mb-3 h-7 w-7 text-text-muted" />
-            <p className="text-sm font-medium text-white">No active LIVE streams</p>
+            <p className="text-sm font-medium text-white">No LIVE suggestions available</p>
             <p className="mt-2 text-xs leading-5 text-text-muted">
-              Search for a creator or wait for suggested streams to load.
+              Refresh shortly or search for a creator who is currently live.
             </p>
           </div>
         )}

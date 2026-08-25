@@ -130,6 +130,22 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
     setStreamUrlState(urls);
   }, []);
 
+  React.useEffect(() => {
+    const handleReconnect = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.username && customEvent.detail.username === activeUsername) {
+        // Use setActiveUsername to properly clear streamUrlState and other states
+        setActiveUsername("");
+        setTimeout(() => {
+          setActiveUsername(customEvent.detail.username);
+        }, 100);
+      }
+    };
+
+    window.addEventListener('tiktok-reconnect', handleReconnect);
+    return () => window.removeEventListener('tiktok-reconnect', handleReconnect);
+  }, [activeUsername, setActiveUsername]);
+
   const streamerInfo = useMemo(() => {
     const base = createStreamerInfo(activeUsername, profileImage);
     if (customInfo.title) base.title = customInfo.title;

@@ -12,7 +12,6 @@ function formatNumber(value: number): string {
 
 export function LiveDetails() {
   const { streamerInfo, stats, status } = useTikTokLive();
-
   const rows = [
     { label: "Username", value: streamerInfo.username, highlight: true },
     { label: "Playback", value: status === "live" ? "LIVE" : status === "connecting" ? "CONNECTING" : "OFFLINE", highlight: status === "live", statusColor: status === "live" ? "text-emerald-400" : status === "connecting" ? "text-amber-400" : "text-zinc-500" },

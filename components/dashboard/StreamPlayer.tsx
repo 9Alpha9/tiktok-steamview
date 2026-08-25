@@ -76,6 +76,10 @@ export function StreamPlayer() {
         enableWorker: true,
         lowLatencyMode: true,
         backBufferLength: 90,
+        xhrSetup: function (xhr) {
+          // TikTok CDN sometimes requires specific headers to bypass 403 on some networks
+          xhr.setRequestHeader('Accept', '*/*');
+        }
       });
       hlsRef.current = hls;
       hls.loadSource(hlsUrl);
@@ -85,7 +89,18 @@ export function StreamPlayer() {
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
-          setVideoError(true);
+          // If network error (403 or anything else that is fatal like stream ending mid-way)
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              setVideoError(true);
+              hls.destroy();
+              hlsRef.current = null;
+              // Auto-refresh the stream gracefully when it drops/expires
+              setTimeout(() => {
+                 window.dispatchEvent(new CustomEvent('tiktok-reconnect', { detail: { username: activeUsername } }));
+              }, 1000);
+          } else {
+             setVideoError(true);
+          }
         }
       });
       return () => {
@@ -116,6 +131,17 @@ export function StreamPlayer() {
 
     window.addEventListener("message", handlePlayerEvent);
     return () => window.removeEventListener("message", handlePlayerEvent);
+  }, [activeUsername]);
+
+  const handleRefreshStream = useCallback(() => {
+    // Force reconnect to TikTok live stream to get a fresh URL
+    const currentUsername = activeUsername;
+    if (currentUsername) {
+      setVideoError(false);
+      // Trigger a reconnect by toggling the username or utilizing the provider's logic
+      // This is a simplified way to trigger a re-fetch of the stream URL
+      window.dispatchEvent(new CustomEvent('tiktok-reconnect', { detail: { username: currentUsername } }));
+    }
   }, [activeUsername]);
 
   const resetOverlayTimer = useCallback(() => {
@@ -195,7 +221,7 @@ export function StreamPlayer() {
         )}
 
         {/* Cover / Fallback when no HLS URL yet */}
-        {activeUsername && !hlsUrl && (
+        {activeUsername && !hlsUrl && !videoError && (
           <div className="flex flex-col items-center gap-4 text-center p-6">
             {coverUrl ? (
               <div className="relative w-full max-w-[480px] aspect-video rounded-lg overflow-hidden bg-[#1f2230]">
@@ -226,20 +252,28 @@ export function StreamPlayer() {
         )}
 
         {/* Video error fallback */}
-        {activeUsername && hlsUrl && videoError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0e1015]/90 z-10">
+        {activeUsername && videoError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0e1015] z-10">
             <div className="w-16 h-16 rounded-full bg-[#1f2230] flex items-center justify-center mb-4">
               <Play className="w-6 h-6 text-text-muted" />
             </div>
             <p className="text-sm font-medium text-white mb-1">Stream playback failed</p>
             <p className="text-xs text-text-muted mb-4">The stream URL may have expired or been revoked.</p>
-            <Button
-              className="bg-[#FF0050] hover:bg-[#FF0050]/90 text-white rounded-lg h-9 px-5 text-sm font-semibold"
-              onClick={openTikTok}
-            >
-              Open in TikTok
-              <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
-            </Button>
+            <div className="flex gap-3">
+              <Button
+                className="bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg h-9 px-5 text-sm font-semibold"
+                onClick={handleRefreshStream}
+              >
+                Retry Stream
+              </Button>
+              <Button
+                className="bg-[#FF0050] hover:bg-[#FF0050]/90 text-white rounded-lg h-9 px-5 text-sm font-semibold"
+                onClick={openTikTok}
+              >
+                Open in TikTok
+                <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+              </Button>
+            </div>
           </div>
         )}
 

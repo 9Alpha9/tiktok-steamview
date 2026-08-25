@@ -102,7 +102,13 @@ export function LiveChat() {
           } as ChatMessage]);
         }
 
-        if (payload.type === "disconnected" || payload.type === "stream_end") {
+        if (payload.type === "stream_end") {
+          // If the stream ends unexpectedly (often happens during PK battles/transitions),
+          // auto-reconnect instead of immediately throwing the user out.
+          window.dispatchEvent(new CustomEvent('tiktok-reconnect', { detail: { username: activeUsername } }));
+        }
+
+        if (payload.type === "disconnected") {
           settled = true;
           setIsConnected(false);
           setStatus("offline");
@@ -112,12 +118,13 @@ export function LiveChat() {
         }
 
         if (payload.type === "stats" && payload.data) {
-          const { giftsIncrement, followersIncrement, sharesIncrement, ...latestStats } = payload.data;
+          const { giftsIncrement, followersIncrement, sharesIncrement, likesIncrement, ...latestStats } = payload.data;
           if (Object.keys(latestStats).length > 0) setStats(latestStats);
           incrementStats({
             gifts: giftsIncrement,
             followers: followersIncrement,
             shares: sharesIncrement,
+            likes: likesIncrement,
           });
         }
 
@@ -130,7 +137,7 @@ export function LiveChat() {
               username: user?.displayId || user?.nickname || payload.data?.uniqueId || "User",
               message: payload.data?.content || payload.data?.comment || "",
               avatarUrl: user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
-              userLevel: user?.payGrade?.level || user?.anchorLevel?.level || undefined,
+              userLevel: user?.payGrade?.level || user?.badgeList?.[0]?.level || user?.anchorLevel?.level || undefined,
               timestamp: Date.now(),
             } as ChatMessage];
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
@@ -150,8 +157,8 @@ export function LiveChat() {
               avatarUrl: user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
               giftName: giftName,
               giftCount: giftCount,
-              giftIcon: payload.data?.gift?.image?.urlList?.[0] || payload.data?.giftPictureUrl,
-              userLevel: user?.payGrade?.level || user?.anchorLevel?.level || undefined,
+              giftIcon: payload.data?.gift?.image?.urlList?.[0] || payload.data?.gift?.icon?.urlList?.[0] || payload.data?.giftPictureUrl,
+              userLevel: user?.payGrade?.level || user?.badgeList?.[0]?.level || user?.anchorLevel?.level || undefined,
               timestamp: Date.now(),
             } as ChatMessage];
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
@@ -160,11 +167,19 @@ export function LiveChat() {
 
         if (payload.type === "error") {
           settled = true;
-          setMessages([]);
-          setIsConnected(false);
-          setStatus("offline");
-          setStreamUrl({});
-          eventSource.close();
+          if (payload.message && typeof payload.message === 'string' && (payload.message.includes('expired') || payload.message.includes('revoked'))) {
+             // Handle expired stream url gracefully by closing connection but not clearing messages immediately
+             eventSource.close();
+             setIsConnected(false);
+             window.dispatchEvent(new CustomEvent('tiktok-reconnect', { detail: { username: activeUsername } }));
+          } else {
+            // Keep messages visible even on error to prevent layout jump and preserve history
+            // setMessages([]); 
+            setIsConnected(false);
+            setStatus("offline");
+            setStreamUrl({});
+            eventSource.close();
+          }
         }
       } catch (err) {
         console.error("Failed to parse SSE message", err);
