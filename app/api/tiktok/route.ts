@@ -363,47 +363,8 @@ export async function GET(req: NextRequest) {
             let title = roomData.title || liveRoom.title || room.title || "";
             const nickname = owner.nickname || owner.display_id || username;
 
-            if (!title) {
-              try {
-                const webClient = (tiktokConnection as any).webClient;
-                const apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
-                  ...webClient.clientParams,
-                  uniqueId: username,
-                  sourceType: "54",
-                });
-                const apiRoom = apiData?.data?.liveRoom || apiData?.data?.live_room || {};
-                title = apiRoom.title || "";
-              } catch (e: any) {}
-            }
-
-            if (!title) {
-              try {
-                const webClient = (tiktokConnection as any).webClient;
-                const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
-                const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"/i);
-                if (ogTitle?.[1]) {
-                  title = ogTitle[1].replace(/\s*on TikTok\s*$/, "").trim();
-                }
-                if (!title) {
-                  const pageTitle = html.match(/<title>([^<]*)<\/title>/i);
-                  if (pageTitle?.[1]) {
-                    title = pageTitle[1].replace(/\s*on TikTok\s*$/, "").replace(/\s*\|\s*TikTok\s*$/, "").trim();
-                  }
-                }
-              } catch (e: any) {}
-            }
-
             let streamUrlObj = roomData.stream_url || liveRoom.stream_url || room.stream_url || {};
             let { hls: hlsPullUrl, flv: flvPullUrl } = deepExtractStreamUrl(streamUrlObj);
-
-            if (!hlsPullUrl) {
-              const altStreamUrl = room.stream_url || liveRoom.stream_url || roomData.stream_url || {};
-              const alt = deepExtractStreamUrl(altStreamUrl);
-              if (alt.hls) {
-                hlsPullUrl = alt.hls;
-                flvPullUrl = alt.flv;
-              }
-            }
 
             if (!hlsPullUrl) {
               for (const candidate of [roomData, liveRoom, room]) {
@@ -417,35 +378,53 @@ export async function GET(req: NextRequest) {
             const coverUrlObj = roomData.cover || liveRoom.cover || room.cover || {};
             let coverUrl = coverUrlObj.url_list?.[0] || coverUrlObj.urlList?.[0] || (typeof coverUrlObj === "string" ? coverUrlObj : "");
 
+            // PRIMARY FALLBACK: Use the library's webClient to fetch the full TikTok page HTML.
+            // This uses proper cookies (ttwid, etc.) and headers that the library already negotiated.
+            // Much more likely to succeed than raw fetch or proxy approaches.
+            if (!hlsPullUrl || !title) {
+              try {
+                const webClient = (tiktokConnection as any).webClient;
+                const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
+
+                // Extract m3u8/flv URLs from the full HTML page
+                if (!hlsPullUrl) {
+                  const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
+                  if (m3Match) hlsPullUrl = m3Match[1].replace(/\\u0026/g, '&');
+
+                  const flvMatch = html.match(/(https?:\/\/[^\s"',<>]+\.flv[^\s"',<>]*)/);
+                  if (flvMatch && !flvPullUrl) flvPullUrl = flvMatch[1].replace(/\\u0026/g, '&');
+                }
+
+                // Extract title from HTML meta tags
+                if (!title) {
+                  const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"/i);
+                  if (ogTitle?.[1]) {
+                    title = ogTitle[1].replace(/\s*on TikTok\s*$/, "").trim();
+                  }
+                  if (!title) {
+                    const pageTitle = html.match(/<title>([^<]*)<\/title>/i);
+                    if (pageTitle?.[1]) {
+                      title = pageTitle[1].replace(/\s*on TikTok\s*$/, "").replace(/\s*\|\s*TikTok\s*$/, "").trim();
+                    }
+                  }
+                }
+              } catch (e: any) {}
+            }
+
+            // SECONDARY FALLBACK: Use the library's authenticated API call
             if (!hlsPullUrl) {
               try {
                 const webClient = (tiktokConnection as any).webClient;
-                
-                // Rely heavily on the robust API call that tiktok-live-connector uses internally
                 let apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
                   ...webClient.clientParams,
                   uniqueId: username,
                   sourceType: "54",
                 });
-                
+
                 let apiLiveRoom = apiData?.data?.liveRoom || apiData?.data?.room || {};
                 let apiStreamUrl = apiLiveRoom.streamData || apiLiveRoom.stream_url || apiLiveRoom.streamDataJson || {};
                 let apiExtracted = deepExtractStreamUrl(apiStreamUrl);
-                
-                // If the stream is still hidden, check alternate mobile API endpoint
-                if (!apiExtracted.hls && apiData?.data?.user?.secUid) {
-                   try {
-                      let mobileApiData = await webClient.getJsonObjectFromTikTokApi("aweme/v1/room/info/", {
-                        ...webClient.clientParams,
-                        room_id: apiLiveRoom.id_str || apiLiveRoom.id || room.id_str,
-                        sec_uid: apiData.data.user.secUid
-                      });
-                      
-                      let mobileRoom = mobileApiData?.data?.room || mobileApiData?.room || {};
-                      apiExtracted = deepExtractStreamUrl(mobileRoom.stream_url || mobileRoom.streamData);
-                   } catch (mobileErr) {}
-                }
-                
+
                 if (apiExtracted.hls) {
                   hlsPullUrl = apiExtracted.hls;
                   if (apiExtracted.flv) flvPullUrl = apiExtracted.flv;
