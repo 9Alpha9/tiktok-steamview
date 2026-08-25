@@ -431,40 +431,50 @@ export async function GET(req: NextRequest) {
                 let apiStreamUrl = apiLiveRoom.streamData || apiLiveRoom.stream_url || apiLiveRoom.streamDataJson || {};
                 let apiExtracted = deepExtractStreamUrl(apiStreamUrl);
                 
-                if (!apiExtracted.hls) {
-                   try {
-                     // Disguise as Googlebot to bypass Vercel datacenter IP blocks!
-                     const response = await fetch(`https://www.tiktok.com/@${username}/live`, {
-                       headers: {
-                         'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                         'Accept-Language': 'en-US,en;q=0.5'
-                       },
-                       cache: 'no-store'
-                     });
-                     const html = await response.text();
-                     
-                     const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
-                     if (m3Match) {
-                        apiExtracted.hls = m3Match[1].replace(/\\u0026/g, '&');
-                     }
-                     
-                     const flvMatch = html.match(/(https?:\/\/[^\s"',<>]+\.flv[^\s"',<>]*)/);
-                     if (flvMatch && !apiExtracted.flv) {
-                        apiExtracted.flv = flvMatch[1].replace(/\\u0026/g, '&');
-                     }
-                     
-                     if (!title) {
-                       const titleMatch = html.match(/"title":"([^"]+)"/);
-                       if (titleMatch) title = titleMatch[1];
-                     }
-                     
-                     if (!coverUrl) {
-                        const coverMatch = html.match(/"coverUrl":"([^"]+)"/);
-                        if (coverMatch) coverUrl = coverMatch[1].replace(/\\u0026/g, '&');
-                     }
-                   } catch (htmlErr) {}
-                }
+            if (!apiExtracted.hls) {
+               try {
+                 // 1st attempt: Normal fetch with standard User-Agent
+                 let html = "";
+                 try {
+                   const res = await fetch(`https://www.tiktok.com/@${username}/live`, {
+                     headers: {
+                       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                       'Accept-Language': 'en-US,en;q=0.9'
+                     },
+                     cache: 'no-store'
+                   });
+                   html = await res.text();
+                 } catch(e) {}
+
+                 // 2nd attempt: If blocked (Vercel IP), use a public proxy to bypass datacenter blocking
+                 if (!html || html.includes('captcha') || html.includes('Access Denied')) {
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.tiktok.com/@${username}/live`)}`;
+                    const proxyRes = await fetch(proxyUrl, { cache: 'no-store' });
+                    html = await proxyRes.text();
+                 }
+                 
+                 const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
+                 if (m3Match) {
+                    apiExtracted.hls = m3Match[1].replace(/\\u0026/g, '&');
+                 }
+                 
+                 const flvMatch = html.match(/(https?:\/\/[^\s"',<>]+\.flv[^\s"',<>]*)/);
+                 if (flvMatch && !apiExtracted.flv) {
+                    apiExtracted.flv = flvMatch[1].replace(/\\u0026/g, '&');
+                 }
+                 
+                 if (!title) {
+                   const titleMatch = html.match(/"title":"([^"]+)"/);
+                   if (titleMatch) title = titleMatch[1];
+                 }
+                 
+                 if (!coverUrl) {
+                    const coverMatch = html.match(/"coverUrl":"([^"]+)"/);
+                    if (coverMatch) coverUrl = coverMatch[1].replace(/\\u0026/g, '&');
+                 }
+               } catch (htmlErr) {}
+            }
                 
                 if (apiExtracted.hls) {
                   hlsPullUrl = apiExtracted.hls;
