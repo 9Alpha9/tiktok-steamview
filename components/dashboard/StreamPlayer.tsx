@@ -245,7 +245,6 @@ export function StreamPlayer() {
         {lastLike && activeUsername && (
           <div className="absolute bottom-16 right-4 z-30 pointer-events-none w-8 h-40">
             {Array.from({ length: Math.min(lastLike.count, 15) }).map((_, i) => {
-              const delay = i * 0.08;
               const size = 18 + Math.random() * 8;
               const xDrift = -6 + Math.random() * 12;
               const yHeight = 100 + Math.random() * 60;
@@ -264,7 +263,6 @@ export function StreamPlayer() {
                   }}
                   transition={{
                     duration: 1.6,
-                    delay,
                     ease: [0.1, 0.7, 0.3, 1],
                     opacity: { times: [0, 0.3, 0.7, 1] },
                     scale: { times: [0, 0.2, 0.6, 1] },
