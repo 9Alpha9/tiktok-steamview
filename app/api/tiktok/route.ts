@@ -342,175 +342,173 @@ export async function GET(req: NextRequest) {
         }
 
         if (shouldProceed) return;
-        
-        const roomInfo = fastRoomInfo;
-        const roomData = fastRoomData;
-        const liveRoom = roomData.liveRoom || roomData.live_room || {};
-        const room = roomData.room || liveRoom.room || liveRoom || roomData;
-        const stats = roomData.stats || liveRoom.stats || room.stats || {};
-        const owner = roomData.owner || liveRoom.owner || room.owner || {};
 
-        const avatarUrl = owner.avatar_thumb?.url_list?.[0]
-          || owner.avatarThumb?.urlList?.[0]
-          || owner.avatar_medium?.url_list?.[0]
-          || owner.avatarMedium?.urlList?.[0]
-          || (typeof owner.avatar_url === "string" ? owner.avatar_url : undefined);
-
-        let title = roomData.title || liveRoom.title || room.title || "";
-        const nickname = owner.nickname || owner.display_id || username;
-
-        if (!title) {
+        // Perform heavy secondary scraping asynchronously so it DOES NOT block the serverless execution loop
+        // and keeps the chat events flowing immediately.
+        setTimeout(async () => {
           try {
-            const webClient = (tiktokConnection as any).webClient;
-            const apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
-              ...webClient.clientParams,
-              uniqueId: username,
-              sourceType: "54",
-            });
-            const apiRoom = apiData?.data?.liveRoom || apiData?.data?.live_room || {};
-            title = apiRoom.title || "";
-          } catch (e: any) {}
-        }
+            const roomInfo = fastRoomInfo;
+            const roomData = fastRoomData;
+            const liveRoom = roomData.liveRoom || roomData.live_room || {};
+            const room = roomData.room || liveRoom.room || liveRoom || roomData;
+            const stats = roomData.stats || liveRoom.stats || room.stats || {};
+            const owner = roomData.owner || liveRoom.owner || room.owner || {};
 
-        if (!title) {
-          try {
-            const webClient = (tiktokConnection as any).webClient;
-            const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
-            const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"/i);
-            if (ogTitle?.[1]) {
-              title = ogTitle[1].replace(/\s*on TikTok\s*$/, "").trim();
-            }
+            const avatarUrl = owner.avatar_thumb?.url_list?.[0]
+              || owner.avatarThumb?.urlList?.[0]
+              || owner.avatar_medium?.url_list?.[0]
+              || owner.avatarMedium?.urlList?.[0]
+              || (typeof owner.avatar_url === "string" ? owner.avatar_url : undefined);
+
+            let title = roomData.title || liveRoom.title || room.title || "";
+            const nickname = owner.nickname || owner.display_id || username;
+
             if (!title) {
-              const pageTitle = html.match(/<title>([^<]*)<\/title>/i);
-              if (pageTitle?.[1]) {
-                title = pageTitle[1].replace(/\s*on TikTok\s*$/, "").replace(/\s*\|\s*TikTok\s*$/, "").trim();
+              try {
+                const webClient = (tiktokConnection as any).webClient;
+                const apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
+                  ...webClient.clientParams,
+                  uniqueId: username,
+                  sourceType: "54",
+                });
+                const apiRoom = apiData?.data?.liveRoom || apiData?.data?.live_room || {};
+                title = apiRoom.title || "";
+              } catch (e: any) {}
+            }
+
+            if (!title) {
+              try {
+                const webClient = (tiktokConnection as any).webClient;
+                const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
+                const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"/i);
+                if (ogTitle?.[1]) {
+                  title = ogTitle[1].replace(/\s*on TikTok\s*$/, "").trim();
+                }
+                if (!title) {
+                  const pageTitle = html.match(/<title>([^<]*)<\/title>/i);
+                  if (pageTitle?.[1]) {
+                    title = pageTitle[1].replace(/\s*on TikTok\s*$/, "").replace(/\s*\|\s*TikTok\s*$/, "").trim();
+                  }
+                }
+              } catch (e: any) {}
+            }
+
+            let streamUrlObj = roomData.stream_url || liveRoom.stream_url || room.stream_url || {};
+            let { hls: hlsPullUrl, flv: flvPullUrl } = deepExtractStreamUrl(streamUrlObj);
+
+            if (!hlsPullUrl) {
+              const altStreamUrl = room.stream_url || liveRoom.stream_url || roomData.stream_url || {};
+              const alt = deepExtractStreamUrl(altStreamUrl);
+              if (alt.hls) {
+                hlsPullUrl = alt.hls;
+                flvPullUrl = alt.flv;
               }
             }
-          } catch (e: any) {}
-        }
 
-        let streamUrlObj = roomData.stream_url || liveRoom.stream_url || room.stream_url || {};
-        let { hls: hlsPullUrl, flv: flvPullUrl } = deepExtractStreamUrl(streamUrlObj);
+            if (!hlsPullUrl) {
+              for (const candidate of [roomData, liveRoom, room]) {
+                if (candidate?.stream_url) {
+                  const r = deepExtractStreamUrl(candidate.stream_url);
+                  if (r.hls) { hlsPullUrl = r.hls; flvPullUrl = r.flv; break; }
+                }
+              }
+            }
 
-        if (!hlsPullUrl) {
-          const altStreamUrl = room.stream_url || liveRoom.stream_url || roomData.stream_url || {};
-          const alt = deepExtractStreamUrl(altStreamUrl);
-          if (alt.hls) {
-            hlsPullUrl = alt.hls;
-            flvPullUrl = alt.flv;
+            const coverUrlObj = roomData.cover || liveRoom.cover || room.cover || {};
+            let coverUrl = coverUrlObj.url_list?.[0] || coverUrlObj.urlList?.[0] || (typeof coverUrlObj === "string" ? coverUrlObj : "");
+
+            if (!hlsPullUrl) {
+              try {
+                const webClient = (tiktokConnection as any).webClient;
+                
+                let apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
+                  ...webClient.clientParams,
+                  uniqueId: username,
+                  sourceType: "54",
+                });
+                
+                let apiLiveRoom = apiData?.data?.liveRoom || apiData?.data?.room || {};
+                let apiStreamUrl = apiLiveRoom.streamData || apiLiveRoom.stream_url || apiLiveRoom.streamDataJson || {};
+                let apiExtracted = deepExtractStreamUrl(apiStreamUrl);
+                
+                if (!apiExtracted.hls) {
+                   try {
+                     const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
+                     const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
+                     if (m3Match) {
+                        apiExtracted.hls = m3Match[1].replace(/\\u0026/g, '&');
+                     }
+                     
+                     const flvMatch = html.match(/(https?:\/\/[^\s"',<>]+\.flv[^\s"',<>]*)/);
+                     if (flvMatch && !apiExtracted.flv) {
+                        apiExtracted.flv = flvMatch[1].replace(/\\u0026/g, '&');
+                     }
+                     
+                     if (!title) {
+                       const titleMatch = html.match(/"title":"([^"]+)"/);
+                       if (titleMatch) title = titleMatch[1];
+                     }
+                     
+                     if (!coverUrl) {
+                        const coverMatch = html.match(/"coverUrl":"([^"]+)"/);
+                        if (coverMatch) coverUrl = coverMatch[1].replace(/\\u0026/g, '&');
+                     }
+                   } catch (htmlErr) {}
+                }
+                
+                if (apiExtracted.hls) {
+                  hlsPullUrl = apiExtracted.hls;
+                  if (apiExtracted.flv) flvPullUrl = apiExtracted.flv;
+                }
+
+                if (!title) title = apiLiveRoom.title || "";
+                if (!coverUrl) {
+                  const apiCover = apiLiveRoom.coverUrl || "";
+                  if (apiCover) coverUrl = apiCover;
+                }
+              } catch {}
+            }
+
+            safeEnqueue(JSON.stringify({
+              type: "stream_url",
+              username,
+              roomInfo: {
+                viewers: getNumber(
+                  roomData.user_count, roomData.userCount, roomData.viewer_count, roomData.viewerCount,
+                  liveRoom.user_count, liveRoom.userCount, liveRoom.viewer_count, liveRoom.viewerCount,
+                  room.user_count, room.userCount, room.viewer_count, room.viewerCount,
+                  stats.user_count, stats.userCount, stats.viewer_count, stats.viewerCount,
+                ),
+                likes: getNumber(
+                  roomData.like_count, roomData.likeCount, roomData.total_like_count, roomData.totalLikeCount,
+                  liveRoom.like_count, liveRoom.likeCount, liveRoom.total_like_count, liveRoom.totalLikeCount,
+                  room.like_count, room.likeCount, room.total_like_count, room.totalLikeCount,
+                  stats.like_count, stats.likeCount, stats.total_like_count, stats.totalLikeCount,
+                ),
+                shares: getNumber(
+                  roomData.share_count, roomData.shareCount,
+                  liveRoom.share_count, liveRoom.shareCount,
+                  room.share_count, room.shareCount,
+                  stats.share_count, stats.shareCount,
+                ),
+                followers: getNumber(
+                  owner.follow_info?.follower_count, owner.followInfo?.followerCount,
+                  owner.follower_count, owner.followerCount,
+                ),
+                avatarUrl,
+                title,
+                nickname,
+                hlsPullUrl,
+                flvPullUrl,
+                coverUrl,
+              }
+            }));
+          } catch (err) {
+             console.error("[TikTok] Async stream URL extraction failed:", err);
           }
-        }
+        }, 0);
 
-        if (!hlsPullUrl) {
-          for (const candidate of [roomData, liveRoom, room]) {
-            if (candidate?.stream_url) {
-              const r = deepExtractStreamUrl(candidate.stream_url);
-              if (r.hls) { hlsPullUrl = r.hls; flvPullUrl = r.flv; break; }
-            }
-          }
-        }
-
-        const coverUrlObj = roomData.cover || liveRoom.cover || room.cover || {};
-        let coverUrl = coverUrlObj.url_list?.[0] || coverUrlObj.urlList?.[0] || (typeof coverUrlObj === "string" ? coverUrlObj : "");
-
-        if (!hlsPullUrl) {
-          try {
-            const webClient = (tiktokConnection as any).webClient;
-            
-            // Try fetching from the web API first
-            let apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
-              ...webClient.clientParams,
-              uniqueId: username,
-              sourceType: "54",
-            });
-            
-            let apiLiveRoom = apiData?.data?.liveRoom || apiData?.data?.room || {};
-            let apiStreamUrl = apiLiveRoom.streamData || apiLiveRoom.stream_url || apiLiveRoom.streamDataJson || {};
-            let apiExtracted = deepExtractStreamUrl(apiStreamUrl);
-            
-            // If that fails, TikTok sometimes completely hides it from web clients for PKs
-            // We can try to extract directly from the raw HTML of the user's live page
-            if (!apiExtracted.hls) {
-               try {
-                 const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
-                 // Bruteforce the ENTIRE HTML page for any m3u8 url
-                 // TikTok sometimes injects it in weird script tags or attributes
-                 const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
-                 if (m3Match) {
-                    apiExtracted.hls = m3Match[1].replace(/\\u0026/g, '&');
-                 }
-                 
-                 const flvMatch = html.match(/(https?:\/\/[^\s"',<>]+\.flv[^\s"',<>]*)/);
-                 if (flvMatch && !apiExtracted.flv) {
-                    apiExtracted.flv = flvMatch[1].replace(/\\u0026/g, '&');
-                 }
-                 
-                 // Get fallback title if missing
-                 if (!title) {
-                   const titleMatch = html.match(/"title":"([^"]+)"/);
-                   if (titleMatch) title = titleMatch[1];
-                 }
-                 
-                 // Get fallback cover if missing
-                 if (!coverUrl) {
-                    const coverMatch = html.match(/"coverUrl":"([^"]+)"/);
-                    if (coverMatch) coverUrl = coverMatch[1].replace(/\\u0026/g, '&');
-                 }
-               } catch (htmlErr) {}
-            }
-            
-            if (apiExtracted.hls) {
-              hlsPullUrl = apiExtracted.hls;
-              if (apiExtracted.flv) flvPullUrl = apiExtracted.flv;
-            }
-
-            if (!title) title = apiLiveRoom.title || "";
-            if (!coverUrl) {
-              const apiCover = apiLiveRoom.coverUrl || "";
-              if (apiCover) coverUrl = apiCover;
-            }
-          } catch {}
-        }
-        
-        // Final fallback: if connection succeeded but we missed the "connected" event due to fast chat messages
-        // or missing stream URL, let's trigger it now. We ensure this always gets sent when connect() succeeds.
-
-        safeEnqueue(JSON.stringify({
-          type: "stream_url",
-          username,
-          roomInfo: {
-            viewers: getNumber(
-              roomData.user_count, roomData.userCount, roomData.viewer_count, roomData.viewerCount,
-              liveRoom.user_count, liveRoom.userCount, liveRoom.viewer_count, liveRoom.viewerCount,
-              room.user_count, room.userCount, room.viewer_count, room.viewerCount,
-              stats.user_count, stats.userCount, stats.viewer_count, stats.viewerCount,
-            ),
-            likes: getNumber(
-              roomData.like_count, roomData.likeCount, roomData.total_like_count, roomData.totalLikeCount,
-              liveRoom.like_count, liveRoom.likeCount, liveRoom.total_like_count, liveRoom.totalLikeCount,
-              room.like_count, room.likeCount, room.total_like_count, room.totalLikeCount,
-              stats.like_count, stats.likeCount, stats.total_like_count, stats.totalLikeCount,
-            ),
-            shares: getNumber(
-              roomData.share_count, roomData.shareCount,
-              liveRoom.share_count, liveRoom.shareCount,
-              room.share_count, room.shareCount,
-              stats.share_count, stats.shareCount,
-            ),
-            followers: getNumber(
-              owner.follow_info?.follower_count, owner.followInfo?.followerCount,
-              owner.follower_count, owner.followerCount,
-            ),
-            avatarUrl,
-            title,
-            nickname,
-            hlsPullUrl,
-            flvPullUrl,
-            coverUrl,
-          }
-        }));
-
-        } catch (err: any) {
+      } catch (err: any) {
           const errorMessage = getErrorMessage(err);
           console.log(`[TikTok] Connection failed for ${username}: ${errorMessage}`);
           

@@ -276,197 +276,213 @@ export function LiveChat() {
     setIsConnected(false);
 
     let settled = false;
+    let reconnecting = false;
 
-    const eventSource = new EventSource(`/api/tiktok?username=${encodeURIComponent(activeUsername)}`);
-    eventSourceRef.current = eventSource;
+    const connectEventSource = () => {
+      if (reconnecting) return;
+      
+      const eventSource = new EventSource(`/api/tiktok?username=${encodeURIComponent(activeUsername)}`);
+      eventSourceRef.current = eventSource;
 
-    eventSource.onmessage = (event) => {
-      try {
-        const payload: ChatEvent = JSON.parse(event.data);
+      eventSource.onmessage = (event) => {
+        try {
+          const payload: ChatEvent = JSON.parse(event.data);
 
-        if (payload.type === "connected" || payload.type === "stream_url") {
-          settled = true;
-          setIsConnected(true);
-          setStatus("live");
-          
-          if (payload.roomInfo?.avatarUrl) setProfileImage(payload.roomInfo.avatarUrl);
-          
-          if (payload.roomInfo?.title || payload.roomInfo?.nickname) {
-            setStreamerDetails({ title: payload.roomInfo.title, nickname: payload.roomInfo.nickname });
+          if (payload.type === "disconnected" || payload.type === "stream_end") {
+            setBattleOpponents([]);
           }
-          
-          if (payload.roomInfo?.hlsPullUrl || payload.roomInfo?.flvPullUrl || payload.roomInfo?.coverUrl) {
-            setStreamUrl({
-              hls: payload.roomInfo.hlsPullUrl || undefined,
-              flv: payload.roomInfo.flvPullUrl || undefined,
-              cover: payload.roomInfo.coverUrl || undefined,
-            });
+
+          if (payload.type === "stream_end") {
+            window.dispatchEvent(new CustomEvent('tiktok-reconnect', { detail: { username: activeUsername } }));
           }
-          
-          setStats({
-            viewers: payload.roomInfo?.viewers || 0,
-            likes: payload.roomInfo?.likes || 0,
-            shares: payload.roomInfo?.shares || 0,
-            followers: payload.roomInfo?.followers || 0,
-          });
-          
-          if (payload.type === "connected") {
-            setMessages(prev => [...prev, {
-              id: uniqueId("sys-conn"),
-              type: "system",
-              username: "System",
-              message: `Connected to @${activeUsername}'s live stream.`,
-              timestamp: Date.now(),
-            } as ChatMessage]);
-          }
-        }
 
-        if (payload.type === "disconnected" || payload.type === "stream_end") {
-          setBattleOpponents([]);
-        }
-
-        if (payload.type === "stream_end") {
-          // If the stream ends unexpectedly (often happens during PK battles/transitions),
-          // auto-reconnect instead of immediately throwing the user out.
-          window.dispatchEvent(new CustomEvent('tiktok-reconnect', { detail: { username: activeUsername } }));
-        }
-
-        if (payload.type === "disconnected") {
-          settled = true;
-          setIsConnected(false);
-          setStatus("offline");
-          setMessages([]);
-          setStreamUrl({});
-          eventSource.close();
-        }
-
-        if (payload.type === "stats" && payload.data) {
-          const { giftsIncrement, followersIncrement, sharesIncrement, likesIncrement, ...latestStats } = payload.data;
-          
-          if (Object.keys(latestStats).length > 0) {
-            setStats(latestStats as any);
-          }
-          
-          incrementStats({
-            gifts: giftsIncrement,
-            followers: followersIncrement,
-            shares: sharesIncrement,
-            likes: likesIncrement,
-          });
-          
-          if (likesIncrement && likesIncrement > 0 && payload.data?.likeSender) {
-             const user = payload.data.likeSender;
-             const username = user?.displayId || user?.nickname || "Someone";
-             setTimeout(() => {
-                setLastLike({ 
-                  username, 
-                  count: likesIncrement, 
-                  id: `like-${Date.now()}-${Math.random()}` 
-                });
-             }, 0);
-          }
-        }
-
-        if (payload.type === "battle" && Array.isArray(payload.data)) {
-           // Parse PK opponents (link mic)
-           const opponents = payload.data
-             .map((item: any) => item.user || item.userProfile || item) // Handle potential nesting
-             .filter((u: any) => {
-                const uid = u.displayId || u.uniqueId || u.display_id || u.unique_id;
-                return uid && uid !== activeUsername;
-             })
-             .map((u: any) => ({
-                username: u.displayId || u.uniqueId || u.display_id || u.unique_id || u.nickname,
-                avatarUrl: u.avatarThumb?.urlList?.[0] || u.avatar_thumb?.url_list?.[0] || u.avatarMedium?.urlList?.[0] || u.avatar_url,
-                nickname: u.nickname
-             }));
-           
-           if (opponents.length > 0) {
-              setBattleOpponents(opponents);
-           } else {
-              setBattleOpponents([]); // Battle ended or self
-           }
-        }
-
-        if (payload.type === "chat" && payload.data) {
-          setMessages(prev => {
-            const user = payload.data?.user;
-            const updated = [...prev, {
-              id: payload.data?.common?.msgId ? `chat-${payload.data.common.msgId}-${Date.now()}` : uniqueId("chat"),
-              type: "chat",
-              username: user?.displayId || user?.nickname || payload.data?.uniqueId || "User",
-              message: payload.data?.content || payload.data?.comment || "",
-              avatarUrl: user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
-              badges: extractBadges(user, payload.data),
-              emotes: payload.data?.emotes,
-              timestamp: Date.now(),
-            } as ChatMessage];
-            return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
-          });
-        }
-
-        if (payload.type === "gift" && payload.data) {
-          setMessages(prev => {
-            const user = payload.data?.user;
-            const giftName = payload.data?.gift?.name || payload.data?.giftName || "a gift";
-            const giftCount = payload.data?.comboCount || payload.data?.repeatCount || 1;
-            const avatar = user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl;
-            const icon = payload.data?.gift?.image?.urlList?.[0] || payload.data?.gift?.icon?.urlList?.[0] || payload.data?.giftPictureUrl;
-            const username = user?.displayId || user?.nickname || payload.data?.uniqueId || "User";
-            const id = payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift");
-            
-            // Trigger the overlay alert asynchronously to avoid update-during-render warning
-            setTimeout(() => {
-               setLastGift({ username, avatarUrl: avatar, giftName, giftIcon: icon, count: giftCount, id });
-            }, 0);
-
-            const updated = [...prev, {
-              id,
-              type: "gift",
-              username,
-              message: `Sent ${giftName} x${giftCount}`,
-              avatarUrl: avatar,
-              giftName: giftName,
-              giftCount: giftCount,
-              giftIcon: icon,
-              badges: extractBadges(user, payload.data),
-              timestamp: Date.now(),
-            } as ChatMessage];
-            return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
-          });
-        }
-
-        if (payload.type === "error") {
-          settled = true;
-          if (payload.message && typeof payload.message === 'string' && (payload.message.includes('expired') || payload.message.includes('revoked'))) {
-             // Handle expired stream url gracefully by closing connection but not clearing messages immediately
-             eventSource.close();
-             setIsConnected(false);
-             window.dispatchEvent(new CustomEvent('tiktok-reconnect', { detail: { username: activeUsername } }));
-          } else {
-            // Keep messages visible even on error to prevent layout jump and preserve history
-            // setMessages([]); 
+          if (payload.type === "disconnected") {
+            settled = true;
             setIsConnected(false);
             setStatus("offline");
+            setMessages([]);
             setStreamUrl({});
             eventSource.close();
+            
+            // Reconnect aggressively if standard disconnect (often Vercel timeout)
+            if (!reconnecting) {
+               reconnecting = true;
+               reconnectTimerRef.current = setTimeout(() => {
+                 reconnecting = false;
+                 connectEventSource();
+               }, 1500);
+            }
           }
+
+          if (payload.type === "stats" && payload.data) {
+            const { giftsIncrement, followersIncrement, sharesIncrement, likesIncrement, ...latestStats } = payload.data;
+            
+            if (Object.keys(latestStats).length > 0) {
+              setStats(latestStats as any);
+            }
+            
+            incrementStats({
+              gifts: giftsIncrement,
+              followers: followersIncrement,
+              shares: sharesIncrement,
+              likes: likesIncrement,
+            });
+            
+            if (likesIncrement && likesIncrement > 0 && payload.data?.likeSender) {
+               const user = payload.data.likeSender;
+               const username = user?.displayId || user?.nickname || "Someone";
+               setTimeout(() => {
+                  setLastLike({ 
+                    username, 
+                    count: likesIncrement, 
+                    id: `like-${Date.now()}-${Math.random()}` 
+                  });
+               }, 0);
+            }
+          }
+
+          if (payload.type === "battle" && Array.isArray(payload.data)) {
+             const opponents = payload.data
+               .map((item: any) => item.user || item.userProfile || item) // Handle potential nesting
+               .filter((u: any) => {
+                  const uid = u.displayId || u.uniqueId || u.display_id || u.unique_id;
+                  return uid && uid !== activeUsername;
+               })
+               .map((u: any) => ({
+                  username: u.displayId || u.uniqueId || u.display_id || u.unique_id || u.nickname,
+                  avatarUrl: u.avatarThumb?.urlList?.[0] || u.avatar_thumb?.url_list?.[0] || u.avatarMedium?.urlList?.[0] || u.avatar_url,
+                  nickname: u.nickname
+               }));
+             
+             if (opponents.length > 0) {
+                setBattleOpponents(opponents);
+             } else {
+                setBattleOpponents([]); 
+             }
+          }
+
+          if (payload.type === "chat" && payload.data) {
+            setMessages(prev => {
+              const user = payload.data?.user;
+              const updated = [...prev, {
+                id: payload.data?.common?.msgId ? `chat-${payload.data.common.msgId}-${Date.now()}` : uniqueId("chat"),
+                type: "chat",
+                username: user?.displayId || user?.nickname || payload.data?.uniqueId || "User",
+                message: payload.data?.content || payload.data?.comment || "",
+                avatarUrl: user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
+                badges: extractBadges(user, payload.data),
+                emotes: payload.data?.emotes,
+                timestamp: Date.now(),
+              } as ChatMessage];
+              return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
+            });
+          }
+
+          if (payload.type === "gift" && payload.data) {
+            setMessages(prev => {
+              const user = payload.data?.user;
+              const giftName = payload.data?.gift?.name || payload.data?.giftName || "a gift";
+              const giftCount = payload.data?.comboCount || payload.data?.repeatCount || 1;
+              const avatar = user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl;
+              const icon = payload.data?.gift?.image?.urlList?.[0] || payload.data?.gift?.icon?.urlList?.[0] || payload.data?.giftPictureUrl;
+              const username = user?.displayId || user?.nickname || payload.data?.uniqueId || "User";
+              const id = payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift");
+              
+              setTimeout(() => {
+                 setLastGift({ username, avatarUrl: avatar, giftName, giftIcon: icon, count: giftCount, id });
+              }, 0);
+
+              const updated = [...prev, {
+                id,
+                type: "gift",
+                username,
+                message: `Sent ${giftName} x${giftCount}`,
+                avatarUrl: avatar,
+                giftName: giftName,
+                giftCount: giftCount,
+                giftIcon: icon,
+                badges: extractBadges(user, payload.data),
+                timestamp: Date.now(),
+              } as ChatMessage];
+              return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
+            });
+          }
+
+          if (payload.type === "connected" || payload.type === "stream_url") {
+            settled = true;
+            setIsConnected(true);
+            setStatus("live");
+            
+            if (payload.roomInfo?.avatarUrl) setProfileImage(payload.roomInfo.avatarUrl);
+            
+            if (payload.roomInfo?.title || payload.roomInfo?.nickname) {
+              setStreamerDetails({ title: payload.roomInfo.title, nickname: payload.roomInfo.nickname });
+            }
+            
+            if (payload.roomInfo?.hlsPullUrl || payload.roomInfo?.flvPullUrl || payload.roomInfo?.coverUrl) {
+              setStreamUrl({
+                hls: payload.roomInfo.hlsPullUrl || undefined,
+                flv: payload.roomInfo.flvPullUrl || undefined,
+                cover: payload.roomInfo.coverUrl || undefined,
+              });
+            }
+            
+            setStats({
+              viewers: payload.roomInfo?.viewers || 0,
+              likes: payload.roomInfo?.likes || 0,
+              shares: payload.roomInfo?.shares || 0,
+              followers: payload.roomInfo?.followers || 0,
+            });
+            
+            if (payload.type === "connected") {
+              setMessages(prev => [...prev, {
+                id: uniqueId("sys-conn"),
+                type: "system",
+                username: "System",
+                message: `Connected to @${activeUsername}'s live stream.`,
+                timestamp: Date.now(),
+              } as ChatMessage]);
+            }
+          }
+
+          if (payload.type === "error") {
+            settled = true;
+            if (payload.message && typeof payload.message === 'string' && (payload.message.includes('expired') || payload.message.includes('revoked'))) {
+               eventSource.close();
+               setIsConnected(false);
+               window.dispatchEvent(new CustomEvent('tiktok-reconnect', { detail: { username: activeUsername } }));
+            } else {
+              setIsConnected(false);
+              eventSource.close();
+              
+              if (!reconnecting) {
+                 reconnecting = true;
+                 reconnectTimerRef.current = setTimeout(() => {
+                   reconnecting = false;
+                   connectEventSource();
+                 }, 3000);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to parse SSE message", err);
         }
-      } catch (err) {
-        console.error("Failed to parse SSE message", err);
-      }
+      };
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        setIsConnected(false);
+        if (!reconnecting) {
+           reconnecting = true;
+           reconnectTimerRef.current = setTimeout(() => {
+             reconnecting = false;
+             connectEventSource();
+           }, 1000); // Fast 1-second reconnect for Vercel idle timeouts
+        }
+      };
     };
 
-    eventSource.onerror = () => {
-      eventSource.close();
-      if (!settled) {
-        reconnectTimerRef.current = setTimeout(() => {
-          reconnectTimerRef.current = null;
-        }, 5000);
-      } else {
-        setIsConnected(false);
-      }
-    };
+    connectEventSource();
 
     return cleanup;
   }, [activeUsername, cleanup, incrementStats, setProfileImage, setStats, setStatus, setStreamerDetails, setStreamUrl]);
