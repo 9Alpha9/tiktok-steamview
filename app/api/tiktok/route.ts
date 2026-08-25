@@ -380,13 +380,11 @@ export async function GET(req: NextRequest) {
 
             // PRIMARY FALLBACK: Use the library's webClient to fetch the full TikTok page HTML.
             // This uses proper cookies (ttwid, etc.) and headers that the library already negotiated.
-            // Much more likely to succeed than raw fetch or proxy approaches.
             if (!hlsPullUrl || !title) {
               try {
                 const webClient = (tiktokConnection as any).webClient;
                 const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
 
-                // Extract m3u8/flv URLs from the full HTML page
                 if (!hlsPullUrl) {
                   const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
                   if (m3Match) hlsPullUrl = m3Match[1].replace(/\\u0026/g, '&');
@@ -395,7 +393,6 @@ export async function GET(req: NextRequest) {
                   if (flvMatch && !flvPullUrl) flvPullUrl = flvMatch[1].replace(/\\u0026/g, '&');
                 }
 
-                // Extract title from HTML meta tags
                 if (!title) {
                   const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"/i);
                   if (ogTitle?.[1]) {
@@ -409,6 +406,32 @@ export async function GET(req: NextRequest) {
                   }
                 }
               } catch (e: any) {}
+            }
+
+            // CLOUDFLARE WORKER PROXY: If still blocked, route through Cloudflare Worker
+            // which uses edge IPs that TikTok is less likely to block.
+            if (!hlsPullUrl) {
+              const workerUrl = process.env.CLOUDFLARE_PROXY_URL;
+              if (workerUrl) {
+                try {
+                  const proxyRes = await fetch(
+                    `${workerUrl}?url=${encodeURIComponent(`https://www.tiktok.com/@${username}/live`)}`,
+                    { cache: 'no-store', signal: AbortSignal.timeout(10000) }
+                  );
+                  const html = await proxyRes.text();
+
+                  const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
+                  if (m3Match) hlsPullUrl = m3Match[1].replace(/\\u0026/g, '&');
+
+                  const flvMatch = html.match(/(https?:\/\/[^\s"',<>]+\.flv[^\s"',<>]*)/);
+                  if (flvMatch && !flvPullUrl) flvPullUrl = flvMatch[1].replace(/\\u0026/g, '&');
+
+                  if (!title) {
+                    const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"/i);
+                    if (ogTitle?.[1]) title = ogTitle[1].replace(/\s*on TikTok\s*$/, "").trim();
+                  }
+                } catch (e: any) {}
+              }
             }
 
             // SECONDARY FALLBACK: Use the library's authenticated API call
