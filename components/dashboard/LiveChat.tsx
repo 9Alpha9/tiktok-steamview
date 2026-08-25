@@ -553,9 +553,12 @@ export function LiveChat() {
             const username = user?.displayId || user?.nickname || payload.data?.uniqueId || "User";
             const id = payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift");
             const diamondCount = payload.data?.gift?.diamondCount || payload.data?.gift?.diamond_count || 0;
+            const giftType = payload.data?.giftType || payload.data?.gift?.type || 1;
+            const repeatCount = payload.data?.repeatCount || 1;
+            const isCombo = repeatCount > 1;
 
             setTimeout(() => {
-              setLastGift({ username, avatarUrl: avatar, giftName, giftIcon: icon, count: giftCount, id, diamondCount: diamondCount * giftCount });
+              setLastGift({ username, avatarUrl: avatar, giftName, giftIcon: icon, count: giftCount, id, diamondCount: diamondCount * giftCount, giftType, isCombo });
               addContribution(username, avatar || "", giftName, giftCount, diamondCount * giftCount);
             }, 0);
 

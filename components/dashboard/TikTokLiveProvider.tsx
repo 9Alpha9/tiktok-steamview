@@ -39,7 +39,7 @@ interface TikTokLiveContextType {
   setStats: (stats: Partial<TikTokLiveContextType["stats"]>) => void;
   streamUrl: { hls?: string; flv?: string; cover?: string };
   setStreamUrl: (urls: { hls?: string; flv?: string; cover?: string }) => void;
-  lastGift: { username: string; avatarUrl: string; giftName: string; giftIcon: string; count: number; id: string; diamondCount: number } | null;
+  lastGift: { username: string; avatarUrl: string; giftName: string; giftIcon: string; count: number; id: string; diamondCount: number; giftType: number; isCombo: boolean } | null;
   setLastGift: (gift: TikTokLiveContextType["lastGift"]) => void;
   lastLike: { username: string; count: number; id: string } | null;
   setLastLike: (like: TikTokLiveContextType["lastLike"]) => void;
@@ -246,7 +246,7 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
   // Auto-clear gift overlay after a few seconds
   useEffect(() => {
      if (lastGift) {
-       const isBigGift = lastGift.diamondCount >= 100;
+       const isBigGift = lastGift.giftType === 2 && !lastGift.isCombo;
        const timer = setTimeout(() => {
           setLastGiftState(null);
        }, isBigGift ? 6000 : 4000);

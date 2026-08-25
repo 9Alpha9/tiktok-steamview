@@ -276,9 +276,9 @@ export function StreamPlayer() {
           </div>
         )}
 
-        {/* Gift Overlay Animation — Small Notification (Regular Gifts) */}
+        {/* Gift Overlay Animation — Small Notification (Regular Gifts & Combos) */}
         <AnimatePresence>
-          {lastGift && activeUsername && lastGift.diamondCount < 100 && (
+          {lastGift && activeUsername && (lastGift.isCombo || lastGift.giftType !== 2) && (
              <motion.div
                key={lastGift.id}
                initial={{ opacity: 0, x: -50, scale: 0.9 }}
@@ -315,9 +315,9 @@ export function StreamPlayer() {
           )}
         </AnimatePresence>
 
-        {/* Gift Overlay Animation — Big Center Celebration (Expensive Gifts) */}
+        {/* Gift Overlay Animation — Big Center Celebration (Interactive Gifts, Single Only) */}
         <AnimatePresence>
-          {lastGift && activeUsername && lastGift.diamondCount >= 100 && (
+          {lastGift && activeUsername && lastGift.giftType === 2 && !lastGift.isCombo && (
              <motion.div
                key={`big-${lastGift.id}`}
                initial={{ opacity: 0, scale: 0.3, y: 50 }}
