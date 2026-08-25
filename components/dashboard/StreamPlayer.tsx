@@ -304,18 +304,31 @@ export function StreamPlayer() {
           )}
         </AnimatePresence>
 
-        {/* PK Battle Opponents Layer */}
+        {/* PK Battle Opponents Layer (Modern TikTok Style Top Bar) */}
         {battleOpponents && battleOpponents.length > 0 && activeUsername && hlsUrl && !videoError && (
-          <div className="absolute inset-x-0 top-0 pt-14 pb-2 px-3 pointer-events-none z-10 flex justify-between">
-             {/* We only render up to 3 opponents to keep it clean, typical PK is 1v1 or 2v2 */}
-             <div className="flex gap-2 ml-auto">
+          <div className="absolute inset-x-0 top-0 pt-12 pb-2 px-3 pointer-events-none z-10 flex flex-col gap-2">
+             {/* Battle Indicator / Health bar placeholder */}
+             <div className="w-full flex items-center justify-between opacity-90 drop-shadow-md px-1">
+               <div className="flex -space-x-2">
+                  <Avatar src={streamerInfo?.avatar} alt={activeUsername} fallback={activeUsername[0]} size="sm" className="w-7 h-7 border-2 border-[#FF0050] z-20" />
+               </div>
+               <div className="flex items-center gap-1.5 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full border border-white/10">
+                  <span className="text-[10px] font-bold text-[#FF0050] tracking-wider">PK</span>
+                  <span className="text-[9px] font-medium text-white/80">MATCH</span>
+               </div>
+               <div className="flex flex-row-reverse -space-x-2 space-x-reverse">
+                  {battleOpponents.slice(0, 3).map((opp, idx) => (
+                    <Avatar key={idx} src={opp.avatarUrl} alt={opp.username} fallback={opp.username?.[0]} size="sm" className="w-7 h-7 border-2 border-[#00F2FE]" style={{ zIndex: 10 - idx }} />
+                  ))}
+               </div>
+             </div>
+
+             {/* Detailed User Labels (VS) */}
+             <div className="flex gap-2 w-full mt-1 justify-end">
                {battleOpponents.slice(0, 3).map((opponent, idx) => (
-                 <div key={idx} className="bg-black/60 backdrop-blur-sm rounded-lg p-1.5 flex items-center gap-2 border border-white/10 pointer-events-auto">
-                    <Avatar src={opponent.avatarUrl} alt={opponent.username} fallback={opponent.username?.[0]} size="sm" className="w-6 h-6 border border-white/20" />
-                    <div className="flex flex-col pr-1">
-                      <span className="text-[9px] text-[#00F2FE] font-bold uppercase leading-none mb-0.5">VS</span>
-                      <span className="text-[10px] text-white font-semibold leading-none truncate max-w-[80px]">{opponent.nickname || opponent.username}</span>
-                    </div>
+                 <div key={idx} className="bg-black/60 backdrop-blur-sm rounded-full pr-3 pl-1 py-1 flex items-center gap-2 border border-white/10 pointer-events-auto">
+                    <Avatar src={opponent.avatarUrl} alt={opponent.username} fallback={opponent.username?.[0]} size="sm" className="w-5 h-5 border border-white/20" />
+                    <span className="text-[10px] text-white font-medium leading-none truncate max-w-[70px]">{opponent.nickname || opponent.username}</span>
                  </div>
                ))}
              </div>
