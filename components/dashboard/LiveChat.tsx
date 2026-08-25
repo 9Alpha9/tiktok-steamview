@@ -7,11 +7,19 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 
 interface ChatEvent {
-  type: "chat" | "gift" | "connected" | "disconnected" | "error" | "stream_end" | "stats";
+  type: "chat" | "gift" | "connected" | "disconnected" | "error" | "stream_end" | "stats" | "battle" | "battle_update" | "stream_url";
   data?: any;
   message?: unknown;
   username?: string;
   roomInfo?: { viewers: number; likes: number; shares?: number; followers?: number; avatarUrl?: string; title?: string; nickname?: string; hlsPullUrl?: string; flvPullUrl?: string; coverUrl?: string };
+}
+
+interface BadgeInfo {
+  type: string;
+  name: string;
+  level?: number;
+  url?: string;
+  color?: string;
 }
 
 interface ChatMessage {
@@ -24,7 +32,81 @@ interface ChatMessage {
   giftName?: string;
   giftCount?: number;
   giftIcon?: string;
-  userLevel?: number;
+  badges?: BadgeInfo[];
+  emotes?: { placeInComment: number; emoteImageUrl: string }[];
+}
+
+function extractBadges(user: any, userDetails?: any): BadgeInfo[] {
+  // TikTok sometimes puts these in `payload.data.userDetails` or directly in `user` or `payload.data`
+  const targetUser = user || userDetails || {};
+  if (!targetUser) return [];
+  
+  const badges: BadgeInfo[] = [];
+
+  // 1. Pay grade / Wealth level
+  const wealthLevel = targetUser.payGrade?.level || targetUser.pay_grade?.level || targetUser.payGradeLevel;
+  if (wealthLevel > 0) {
+    badges.push({
+      type: "wealth",
+      name: "", // Usually no name, just the number
+      level: wealthLevel,
+      color: wealthLevel > 30 ? "bg-indigo-500" : "bg-[#4B6EEF]" // Default tiktok blue
+    });
+  }
+
+  // 2. Fans club / Fan badge
+  const fansLevel = targetUser.fansClub?.data?.level || targetUser.fans_club?.data?.level || targetUser.fansLevel;
+  const fansName = targetUser.fansClub?.data?.clubName || targetUser.fans_club?.data?.club_name || targetUser.fansName;
+  if (fansLevel > 0 && fansName) {
+    badges.push({
+      type: "fans",
+      name: fansName,
+      level: fansLevel,
+      color: "bg-[#FF5A50]" // TikTok standard fan badge red/orange
+    });
+  }
+
+  // 3. Subscriber / Member
+  // Often inside badgeList
+  
+  // 4. Fallback to checking badgeList directly if specific objects are missing
+  const badgeList = targetUser.badgeList || targetUser.badge_list || [];
+  if (Array.isArray(badgeList)) {
+    for (const b of badgeList) {
+       // displayType 1 often denotes an image or custom badge
+       if (b.displayType === 1 && (b.image?.urlList?.[0] || b.icon?.urlList?.[0] || b.urlList?.[0])) {
+         badges.push({
+           type: "icon",
+           name: b.name || b.title || "Badge",
+           url: b.image?.urlList?.[0] || b.icon?.urlList?.[0] || b.urlList?.[0],
+           color: "bg-transparent shadow-none px-0"
+         });
+       } else if (b.name && b.level) {
+          // generic badge parsing
+          // Ensure we don't duplicate fans/wealth if they are also in the badge list
+          if (!badges.some(existing => existing.name === b.name || existing.type === "generic")) {
+             badges.push({
+                type: "generic",
+                name: b.name,
+                level: b.level,
+                color: "bg-zinc-500"
+             });
+          }
+       }
+    }
+  }
+
+  // 5. Moderator Badge
+  const userAttr = targetUser.userAttr || targetUser.user_attr || {};
+  if (userAttr?.isAdmin || userAttr?.is_admin || targetUser.isAdmin) {
+    badges.push({
+       type: "admin",
+       name: "Mod",
+       color: "bg-[#00F2FE]"
+    });
+  }
+
+  return badges;
 }
 
 let messageCounter = 0;
@@ -33,11 +115,141 @@ function uniqueId(prefix: string): string {
   return `${prefix}-${Date.now()}-${++messageCounter}`;
 }
 
+// Map custom text emojis from TikTok to standard unicode emojis as fallback
+const textEmojiMap: Record<string, string> = {
+  "[smile]": "🙂",
+  "[happy]": "😀",
+  "[angry]": "😠",
+  "[cry]": "😢",
+  "[embarrassed]": "😳",
+  "[surprised]": "😮",
+  "[wronged]": "🥺",
+  "[shout]": "📢",
+  "[flushed]": "😳",
+  "[yummy]": "😋",
+  "[complacent]": "😌",
+  "[drool]": "🤤",
+  "[scream]": "😱",
+  "[weep]": "😭",
+  "[speechless]": "😶",
+  "[funnyface]": "🤪",
+  "[laughwithtears]": "😂",
+  "[laughcry]": "😂",
+  "[joyful]": "😊",
+  "[facewithrollingeyes]": "🙄",
+  "[sulk]": "😒",
+  "[thinking]": "🤔",
+  "[lovely]": "😍",
+  "[greedy]": "🤑",
+  "[wow]": "🤩",
+  "[proud]": "😎",
+  "[smileface]": "😇",
+  "[stunned]": "😲",
+  "[dizzy]": "😵",
+  "[applause]": "👏",
+  "[slap]": "🤦",
+  "[tears]": "🥲",
+  "[kiss]": "😘",
+  "[kissface]": "😗",
+  "[facewithheartseyes]": "😍",
+  "[hi]": "👋",
+  "[bye]": "👋",
+  "[hello]": "👋",
+  "[hehe]": "😁",
+  "[haha]": "😆",
+  "[oh]": "😯",
+  "[ok]": "👌",
+  "[love]": "❤️",
+  "[heart]": "❤️",
+  "[like]": "👍",
+  "[dislike]": "👎",
+  "[thanks]": "🙏",
+  "[thankyou]": "🙏",
+  "[cool]": "😎",
+  "[omg]": "😱",
+  "[yes]": "✅",
+  "[no]": "❌",
+  "[lol]": "😂",
+  "[lmao]": "🤣",
+  "[sad]": "😞",
+  "[sweat]": "😓",
+  "[sleep]": "😴",
+  "[fire]": "🔥",
+  "[star]": "⭐",
+  "[flower]": "🌹",
+  "[rose]": "🌹",
+  "[100]": "💯",
+  "[party]": "🎉",
+  "[celebrate]": "🥳",
+  "[gift]": "🎁",
+  "[cake]": "🎂",
+  "[coffee]": "☕",
+  "[music]": "🎵",
+  "[dance]": "💃",
+  "[pray]": "🙏",
+  "[peace]": "✌️",
+  "[v]": "✌️",
+};
+
+// Replace text emojis like [laughcry] with standard emojis, handles images if emotes array passed
+function renderMessageContent(text: string, emotes?: { placeInComment: number; emoteImageUrl: string }[]) {
+  if (!text) return null;
+  
+  let parts: React.ReactNode[] = [];
+  
+  // If we have proper image emotes from tiktok payload
+  if (emotes && emotes.length > 0) {
+    let lastIndex = 0;
+    
+    // TikTok provides emotes with 'placeInComment' which is the character index
+    // We sort them by position just in case
+    const sortedEmotes = [...emotes].sort((a, b) => a.placeInComment - b.placeInComment);
+    
+    sortedEmotes.forEach((emote, index) => {
+       // Extract text before this emote
+       const beforeText = text.substring(lastIndex, emote.placeInComment);
+       if (beforeText) {
+          // Parse standard text emojis in the preceding text
+          const parsed = beforeText.replace(/\[.*?\]/gi, (match) => {
+             return textEmojiMap[match.toLowerCase()] || match;
+          });
+          parts.push(<span key={`t-${index}`}>{parsed}</span>);
+       }
+       
+       // Add the emote image itself
+       parts.push(
+         <img key={`e-${index}`} src={emote.emoteImageUrl} alt="emote" className="w-5 h-5 inline-block align-middle mx-0.5" />
+       );
+       
+       // Update lastIndex (tiktok emote strings are typically like "[emoji_name]")
+       // We try to find the closing bracket to know where the text continues
+       const closeBracket = text.indexOf(']', emote.placeInComment);
+       lastIndex = closeBracket !== -1 ? closeBracket + 1 : emote.placeInComment + 1;
+    });
+    
+    // Add any remaining text
+    if (lastIndex < text.length) {
+       const remainingText = text.substring(lastIndex);
+       const parsed = remainingText.replace(/\[.*?\]/gi, (match) => {
+          return textEmojiMap[match.toLowerCase()] || match;
+       });
+       parts.push(<span key="t-end">{parsed}</span>);
+    }
+    
+    return <span className="inline-block align-middle">{parts}</span>;
+  }
+
+  // Fallback to purely text-based emoji mapping
+  return text.replace(/\[.*?\]/gi, (match) => {
+    return textEmojiMap[match.toLowerCase()] || match;
+  });
+}
+
 export function LiveChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { activeUsername, incrementStats, setProfileImage, setStats, setStatus, status, setStreamerDetails, setStreamUrl } = useTikTokLive();
+  const { activeUsername, incrementStats, setProfileImage, setStats, setStatus, status, setStreamerDetails, setStreamUrl, setLastGift, setBattleOpponents } = useTikTokLive();
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,14 +284,17 @@ export function LiveChat() {
       try {
         const payload: ChatEvent = JSON.parse(event.data);
 
-        if (payload.type === "connected") {
+        if (payload.type === "connected" || payload.type === "stream_url") {
           settled = true;
           setIsConnected(true);
           setStatus("live");
-          setProfileImage(payload.roomInfo?.avatarUrl);
+          
+          if (payload.roomInfo?.avatarUrl) setProfileImage(payload.roomInfo.avatarUrl);
+          
           if (payload.roomInfo?.title || payload.roomInfo?.nickname) {
             setStreamerDetails({ title: payload.roomInfo.title, nickname: payload.roomInfo.nickname });
           }
+          
           if (payload.roomInfo?.hlsPullUrl || payload.roomInfo?.flvPullUrl || payload.roomInfo?.coverUrl) {
             setStreamUrl({
               hls: payload.roomInfo.hlsPullUrl || undefined,
@@ -87,19 +302,27 @@ export function LiveChat() {
               cover: payload.roomInfo.coverUrl || undefined,
             });
           }
+          
           setStats({
             viewers: payload.roomInfo?.viewers || 0,
             likes: payload.roomInfo?.likes || 0,
             shares: payload.roomInfo?.shares || 0,
             followers: payload.roomInfo?.followers || 0,
           });
-          setMessages(prev => [...prev, {
-            id: uniqueId("sys-conn"),
-            type: "system",
-            username: "System",
-            message: `Connected to @${activeUsername}'s live stream.`,
-            timestamp: Date.now(),
-          } as ChatMessage]);
+          
+          if (payload.type === "connected") {
+            setMessages(prev => [...prev, {
+              id: uniqueId("sys-conn"),
+              type: "system",
+              username: "System",
+              message: `Connected to @${activeUsername}'s live stream.`,
+              timestamp: Date.now(),
+            } as ChatMessage]);
+          }
+        }
+
+        if (payload.type === "disconnected" || payload.type === "stream_end") {
+          setBattleOpponents([]);
         }
 
         if (payload.type === "stream_end") {
@@ -132,6 +355,23 @@ export function LiveChat() {
           });
         }
 
+        if (payload.type === "battle" && Array.isArray(payload.data)) {
+           // Parse PK opponents (link mic)
+           const opponents = payload.data
+             .filter((u: any) => u.displayId !== activeUsername && u.uniqueId !== activeUsername)
+             .map((u: any) => ({
+                username: u.displayId || u.uniqueId || u.nickname,
+                avatarUrl: u.avatarThumb?.urlList?.[0] || u.avatar_thumb?.url_list?.[0],
+                nickname: u.nickname
+             }));
+           
+           if (opponents.length > 0) {
+              setBattleOpponents(opponents);
+           } else {
+              setBattleOpponents([]); // Battle ended or self
+           }
+        }
+
         if (payload.type === "chat" && payload.data) {
           setMessages(prev => {
             const user = payload.data?.user;
@@ -141,7 +381,8 @@ export function LiveChat() {
               username: user?.displayId || user?.nickname || payload.data?.uniqueId || "User",
               message: payload.data?.content || payload.data?.comment || "",
               avatarUrl: user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
-              userLevel: user?.payGrade?.level || user?.badgeList?.[0]?.level || user?.anchorLevel?.level || undefined,
+              badges: extractBadges(user, payload.data),
+              emotes: payload.data?.emotes,
               timestamp: Date.now(),
             } as ChatMessage];
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
@@ -153,16 +394,26 @@ export function LiveChat() {
             const user = payload.data?.user;
             const giftName = payload.data?.gift?.name || payload.data?.giftName || "a gift";
             const giftCount = payload.data?.comboCount || payload.data?.repeatCount || 1;
+            const avatar = user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl;
+            const icon = payload.data?.gift?.image?.urlList?.[0] || payload.data?.gift?.icon?.urlList?.[0] || payload.data?.giftPictureUrl;
+            const username = user?.displayId || user?.nickname || payload.data?.uniqueId || "User";
+            const id = payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift");
+            
+            // Trigger the overlay alert asynchronously to avoid update-during-render warning
+            setTimeout(() => {
+               setLastGift({ username, avatarUrl: avatar, giftName, giftIcon: icon, count: giftCount, id });
+            }, 0);
+
             const updated = [...prev, {
-              id: payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift"),
+              id,
               type: "gift",
-              username: user?.displayId || user?.nickname || payload.data?.uniqueId || "User",
+              username,
               message: `Sent ${giftName} x${giftCount}`,
-              avatarUrl: user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl,
+              avatarUrl: avatar,
               giftName: giftName,
               giftCount: giftCount,
-              giftIcon: payload.data?.gift?.image?.urlList?.[0] || payload.data?.gift?.icon?.urlList?.[0] || payload.data?.giftPictureUrl,
-              userLevel: user?.payGrade?.level || user?.badgeList?.[0]?.level || user?.anchorLevel?.level || undefined,
+              giftIcon: icon,
+              badges: extractBadges(user, payload.data),
               timestamp: Date.now(),
             } as ChatMessage];
             return updated.length > 100 ? updated.slice(updated.length - 100) : updated;
@@ -257,19 +508,26 @@ export function LiveChat() {
               </div>
             )}
 
-            <div className="flex flex-col flex-1">
-              <div className="flex items-center space-x-2">
-                <span className={`text-xs font-semibold ${msg.type === 'system' ? 'text-zinc-400' : 'text-zinc-300'}`}>
+            <div className="flex flex-col flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap leading-none mb-0.5">
+                {msg.badges && msg.badges.map((badge, i) => (
+                  <span 
+                    key={i} 
+                    className={`inline-flex items-center text-[10px] font-bold px-1 py-0.5 rounded shadow-sm text-white leading-none tracking-tight shrink-0 ${badge.color || 'bg-zinc-700'}`}
+                  >
+                    {badge.type === 'wealth' && <span className="mr-0.5" style={{ fontSize: '9px'}}>💎</span>}
+                    {badge.type === 'fans' && <span className="mr-0.5" style={{ fontSize: '9px'}}>❤️</span>}
+                    {badge.type === 'admin' && <span className="mr-0.5" style={{ fontSize: '9px'}}>🛡️</span>}
+                    {badge.url && <img src={badge.url} alt={badge.name} className="w-3 h-3 mr-0.5 inline-block object-contain" />}
+                    <span>{badge.name} {badge.level ? `${badge.type === 'wealth' ? badge.level : (badge.type === 'fans' ? badge.level : 'Lv.' + badge.level)}` : ''}</span>
+                  </span>
+                ))}
+                <span className={`text-xs font-semibold shrink-0 ${msg.type === 'system' ? 'text-zinc-400' : 'text-zinc-300'}`}>
                   {msg.username}
                 </span>
-                {msg.userLevel && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#FF0050]/20 text-[#FF0050] leading-none">
-                    Lv.{msg.userLevel}
-                  </span>
-                )}
               </div>
-              <span className={`text-sm ${msg.type === 'gift' ? 'text-[#FF0050] font-medium flex items-center gap-1' : 'text-white'}`}>
-                {msg.message}
+              <span className={`text-sm break-words ${msg.type === 'gift' ? 'text-[#FF0050] font-medium flex items-center gap-1' : 'text-white'}`}>
+                {msg.type === 'chat' ? renderMessageContent(msg.message, msg.emotes) : msg.message}
                 {msg.type === 'gift' && msg.giftIcon && (
                   <img src={msg.giftIcon} alt={msg.giftName} className="w-4 h-4 object-contain inline-block" />
                 )}

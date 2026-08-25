@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState, useEffect } from "react";
 
 export type StreamerInfo = {
   title: string;
@@ -39,6 +39,10 @@ interface TikTokLiveContextType {
   setStats: (stats: Partial<TikTokLiveContextType["stats"]>) => void;
   streamUrl: { hls?: string; flv?: string; cover?: string };
   setStreamUrl: (urls: { hls?: string; flv?: string; cover?: string }) => void;
+  lastGift: { username: string; avatarUrl: string; giftName: string; giftIcon: string; count: number; id: string } | null;
+  setLastGift: (gift: TikTokLiveContextType["lastGift"]) => void;
+  battleOpponents: { username: string; avatarUrl: string; nickname?: string }[];
+  setBattleOpponents: (opponents: TikTokLiveContextType["battleOpponents"]) => void;
 }
 
 function createStreamerInfo(username: string, profileImage?: string): StreamerInfo {
@@ -77,6 +81,10 @@ const TikTokLiveContext = createContext<TikTokLiveContextType>({
   setStats: () => {},
   streamUrl: {},
   setStreamUrl: () => {},
+  lastGift: null,
+  setLastGift: () => {},
+  battleOpponents: [],
+  setBattleOpponents: () => {},
 });
 
 export const useTikTokLive = () => useContext(TikTokLiveContext);
@@ -94,6 +102,18 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
   const [profileImage, setProfileImage] = useState<string | undefined>();
   const [customInfo, setCustomInfo] = useState<{ title?: string; nickname?: string }>({});
   const [streamUrl, setStreamUrlState] = useState<{ hls?: string; flv?: string; cover?: string }>({});
+  const [lastGift, setLastGiftState] = useState<TikTokLiveContextType["lastGift"]>(null);
+  const [battleOpponents, setBattleOpponents] = useState<TikTokLiveContextType["battleOpponents"]>([]);
+
+  // Auto-clear gift overlay after a few seconds
+  useEffect(() => {
+     if (lastGift) {
+       const timer = setTimeout(() => {
+          setLastGiftState(null);
+       }, 4000); // Overlay stays for 4 seconds
+       return () => clearTimeout(timer);
+     }
+  }, [lastGift]);
 
   const setStats = React.useCallback((newStats: Partial<typeof stats>) => {
     setStatsState(prev => ({ ...prev, ...newStats }));
@@ -119,6 +139,8 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
       setCustomInfo({});
       setStreamUrlState({});
       setStatsState({ viewers: 0, likes: 0, shares: 0, gifts: 0, followers: 0 });
+      setLastGiftState(null);
+      setBattleOpponents([]);
     }
   }, []);
 
@@ -166,8 +188,12 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
         stats,
         setStats,
         streamUrl,
+        lastGift,
+        setLastGift: setLastGiftState,
+        battleOpponents,
+        setBattleOpponents,
       }),
-    [streamerInfo, activeUsername, setActiveUsername, status, stats, setStatus, setProfileImage, setStreamerDetails, setStreamUrl, incrementStats, setStats, streamUrl],
+    [streamerInfo, activeUsername, setActiveUsername, status, stats, setStatus, setProfileImage, setStreamerDetails, setStreamUrl, incrementStats, setStats, streamUrl, lastGift, setLastGiftState, battleOpponents, setBattleOpponents],
   );
 
   return <TikTokLiveContext.Provider value={value}>{children}</TikTokLiveContext.Provider>;

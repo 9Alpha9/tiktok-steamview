@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useTikTokLive } from "./TikTokLiveProvider";
 import { Avatar } from "@/components/ui/Avatar";
+import { AnimatePresence, motion } from "framer-motion";
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -32,9 +33,10 @@ function formatViewers(n: number): string {
 }
 
 export function StreamPlayer() {
-  const { activeUsername, streamerInfo, status, stats, streamUrl } = useTikTokLive();
+  const { activeUsername, setActiveUsername, streamUrl, streamerInfo, stats, status, lastGift, battleOpponents } = useTikTokLive();
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const [objectFit, setObjectFit] = useState<"contain" | "cover">("contain");
 
   const [showOverlay, setShowOverlay] = useState(true);
   const [streamStartTime, setStreamStartTime] = useState(() => Date.now());
@@ -47,6 +49,8 @@ export function StreamPlayer() {
 
   const hlsUrl = streamUrl?.hls;
   const coverUrl = streamUrl?.cover;
+
+  const flvUrl = streamUrl?.flv;
 
   useEffect(() => {
     if (activeUsername) {
@@ -67,7 +71,15 @@ export function StreamPlayer() {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !hlsUrl) return;
+    if (!video || !hlsUrl) {
+       // If no HLS but we have FLV, the current player only supports HLS.
+       // It will fail gracefully.
+       if (!hlsUrl && flvUrl && !videoError) {
+          console.warn("Only FLV URL found, but FLV playback is not implemented in this player.");
+          setVideoError(true);
+       }
+       return;
+    }
 
     setVideoError(false);
 
@@ -133,6 +145,25 @@ export function StreamPlayer() {
     return () => window.removeEventListener("message", handlePlayerEvent);
   }, [activeUsername]);
 
+  useEffect(() => {
+    if (videoRef.current) {
+      const handleResize = () => {
+         const video = videoRef.current;
+         if (!video) return;
+         // Detect if video is landscape/multi-guest (width > height)
+         if (video.videoWidth > video.videoHeight) {
+            setObjectFit("contain"); // Ensure landscape fits within the container horizontally
+         } else {
+            // Default to contain for normal portrait too
+            setObjectFit("contain"); 
+         }
+      };
+      
+      videoRef.current.addEventListener('loadedmetadata', handleResize);
+      return () => videoRef.current?.removeEventListener('loadedmetadata', handleResize);
+    }
+  }, [hlsUrl, activeUsername]);
+
   const handleRefreshStream = useCallback(() => {
     // Force reconnect to TikTok live stream to get a fresh URL
     const currentUsername = activeUsername;
@@ -185,12 +216,69 @@ export function StreamPlayer() {
   }, [activeUsername]);
 
   return (
-    <Card className="flex flex-col h-full bg-[#11131A] border-border/50 overflow-hidden">
+    <Card className="flex flex-col h-full bg-[#11131A] border-border/50 overflow-hidden relative">
       {/* Video Area */}
       <div
         className="relative flex-1 bg-[#0e1015] flex items-center justify-center overflow-hidden min-h-0"
         onMouseMove={handleMouseMove}
       >
+        {/* Gift Overlay Animation */}
+        <AnimatePresence>
+          {lastGift && activeUsername && (
+             <motion.div
+               key={lastGift.id}
+               initial={{ opacity: 0, x: -50, scale: 0.9 }}
+               animate={{ opacity: 1, x: 0, scale: 1 }}
+               exit={{ opacity: 0, y: -20, transition: { duration: 0.3 } }}
+               className="absolute top-16 left-3 z-40 flex items-center gap-2 bg-black/40 backdrop-blur-md rounded-full pr-4 p-1 border border-white/10"
+               style={{ maxWidth: '80%' }}
+             >
+               <Avatar src={lastGift.avatarUrl} alt={lastGift.username} size="sm" fallback={lastGift.username[0]} className="w-8 h-8 shrink-0 border border-white/10" />
+               <div className="flex flex-col justify-center min-w-0 pr-2">
+                 <span className="text-[11px] font-bold text-white truncate leading-tight">{lastGift.username}</span>
+                 <span className="text-[10px] font-medium text-amber-300 truncate leading-tight">Sent {lastGift.giftName}</span>
+               </div>
+               {lastGift.giftIcon && (
+                 <motion.img 
+                   src={lastGift.giftIcon} 
+                   alt={lastGift.giftName} 
+                   className="w-10 h-10 object-contain ml-1 drop-shadow-lg"
+                   initial={{ scale: 0.5, rotate: -20 }}
+                   animate={{ scale: 1, rotate: 0 }}
+                   transition={{ duration: 0.5, type: 'spring', bounce: 0.5 }}
+                 />
+               )}
+                {lastGift.count > 1 && (
+                  <motion.span 
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="text-[#FF0050] font-black text-xl italic ml-1 drop-shadow-md"
+                  >
+                    x{lastGift.count}
+                  </motion.span>
+               )}
+             </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* PK Battle Opponents Layer */}
+        {battleOpponents && battleOpponents.length > 0 && activeUsername && hlsUrl && !videoError && (
+          <div className="absolute inset-x-0 top-0 pt-14 pb-2 px-3 pointer-events-none z-10 flex justify-between">
+             {/* We only render up to 3 opponents to keep it clean, typical PK is 1v1 or 2v2 */}
+             <div className="flex gap-2 ml-auto">
+               {battleOpponents.slice(0, 3).map((opponent, idx) => (
+                 <div key={idx} className="bg-black/60 backdrop-blur-sm rounded-lg p-1.5 flex items-center gap-2 border border-white/10 pointer-events-auto">
+                    <Avatar src={opponent.avatarUrl} alt={opponent.username} fallback={opponent.username?.[0]} size="sm" className="w-6 h-6 border border-white/20" />
+                    <div className="flex flex-col pr-1">
+                      <span className="text-[9px] text-[#00F2FE] font-bold uppercase leading-none mb-0.5">VS</span>
+                      <span className="text-[10px] text-white font-semibold leading-none truncate max-w-[80px]">{opponent.nickname || opponent.username}</span>
+                    </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
+
         {/* LIVE + Viewers Badge (top-left) */}
         {activeUsername && (
           <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
@@ -213,7 +301,7 @@ export function StreamPlayer() {
         {activeUsername && hlsUrl && (
           <video
             ref={videoRef}
-            className="h-full w-full object-contain"
+            className={`h-full w-full relative z-10 transition-all duration-300 ${objectFit === 'cover' ? 'object-cover' : 'object-contain'}`}
             playsInline
             muted
             autoPlay
@@ -313,11 +401,9 @@ export function StreamPlayer() {
                   </div>
                 )}
                 <button
-                  onClick={() => {
-                    const video = videoRef.current;
-                    if (video?.requestFullscreen) video.requestFullscreen();
-                  }}
+                  onClick={() => setObjectFit(prev => prev === 'cover' ? 'contain' : 'cover')}
                   className="text-white/80 hover:text-white transition-colors"
+                  title="Toggle Aspect Ratio"
                 >
                   <Maximize2 className="w-4 h-4" />
                 </button>
@@ -340,15 +426,18 @@ export function StreamPlayer() {
                 className="border border-white/10"
               />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-white text-sm">{streamerInfo?.nickname || activeUsername}</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold text-white text-[13px] sm:text-sm">{streamerInfo?.nickname || activeUsername}</span>
                   <svg className="w-3.5 h-3.5 text-[#00F2FE] flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
                   </svg>
+                  {battleOpponents && battleOpponents.length > 0 && (
+                     <span className="text-[10px] font-bold bg-[#FF0050] text-white px-1.5 py-0.5 rounded ml-1 tracking-wider uppercase">PK Match</span>
+                  )}
                 </div>
-                <span className="text-xs text-text-muted">@{activeUsername}</span>
+                <span className="text-[11px] sm:text-xs text-text-muted">@{activeUsername}</span>
               </div>
-              <div className="hidden sm:flex items-center gap-6 text-xs text-text-muted">
+              <div className="hidden sm:flex items-center gap-4 sm:gap-6 text-xs text-text-muted">
                 <div className="flex flex-col items-center">
                   <span className="font-semibold text-white text-sm">Chatting</span>
                   <span>Category</span>

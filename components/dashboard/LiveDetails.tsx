@@ -5,9 +5,9 @@ import { Circle, Sparkles, Eye, Heart, Share2, Gift, Users } from "lucide-react"
 import { useTikTokLive } from "./TikTokLiveProvider";
 
 function formatNumber(value: number): string {
-  return value > 0
+  return value >= 0
     ? new Intl.NumberFormat("id-ID", { notation: "compact", maximumFractionDigits: 1 }).format(value)
-    : "—";
+    : "-";
 }
 
 export function LiveDetails() {

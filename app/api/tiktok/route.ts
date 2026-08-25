@@ -55,6 +55,26 @@ function deepExtractStreamUrl(obj: any): { hls: string; flv: string } {
     || obj.flv
     || "";
 
+  // Helper to brutally find first m3u8 url in a stringified JSON if standard paths fail
+  const forceExtractM3u8 = (targetObj: any) => {
+     try {
+       const str = typeof targetObj === 'string' ? targetObj : JSON.stringify(targetObj);
+       // Less restrictive regex to capture the full URL even if it has complex params
+       const match = str.match(/(https?:\/\/[^\s"',]+\.m3u8[^\s"',]*)/);
+       if (match) return match[1].replace(/\\u0026/g, '&');
+     } catch(e) {}
+     return "";
+  };
+
+  const forceExtractFlv = (targetObj: any) => {
+     try {
+       const str = typeof targetObj === 'string' ? targetObj : JSON.stringify(targetObj);
+       const match = str.match(/(https?:\/\/[^\s"',]+\.flv[^\s"',]*)/);
+       if (match) return match[1].replace(/\\u0026/g, '&');
+     } catch(e) {}
+     return "";
+  };
+
   if (!hls) {
     const streamDataRaw = obj.live_core_sdk_data?.pull_data?.stream_data
       || obj.stream_data
@@ -69,6 +89,11 @@ function deepExtractStreamUrl(obj: any): { hls: string; flv: string } {
           || streamData.data?.SD1?.main?.hls
           || streamData.data?.hd?.main?.hls
           || streamData.data?.ld?.main?.hls
+          || streamData.data?.ao?.main?.hls
+          || streamData.data?.["1080p"]?.main?.hls
+          || streamData.data?.["720p"]?.main?.hls
+          || streamData.data?.["480p"]?.main?.hls
+          || streamData.data?.default?.main?.hls
           || "";
         flv = streamData.data?.origin?.main?.flv
           || streamData.data?.FULL_HD1?.main?.flv
@@ -76,6 +101,11 @@ function deepExtractStreamUrl(obj: any): { hls: string; flv: string } {
           || streamData.data?.SD1?.main?.flv
           || streamData.data?.hd?.main?.flv
           || streamData.data?.ld?.main?.flv
+          || streamData.data?.ao?.main?.flv
+          || streamData.data?.["1080p"]?.main?.flv
+          || streamData.data?.["720p"]?.main?.flv
+          || streamData.data?.["480p"]?.main?.flv
+          || streamData.data?.default?.main?.flv
           || "";
       } catch {}
     } else if (typeof streamDataRaw === "object" && streamDataRaw) {
@@ -83,18 +113,43 @@ function deepExtractStreamUrl(obj: any): { hls: string; flv: string } {
         || streamDataRaw.default?.FULL_HD1?.main?.hls
         || streamDataRaw.default?.HD1?.main?.hls
         || streamDataRaw.default?.SD1?.main?.hls
+        || streamDataRaw.default?.["1080p"]?.main?.hls
+        || streamDataRaw.origin?.main?.hls
+        || streamDataRaw.FULL_HD1?.main?.hls
         || "";
       flv = streamDataRaw.default?.origin?.main?.flv
         || streamDataRaw.default?.FULL_HD1?.main?.flv
         || streamDataRaw.default?.HD1?.main?.flv
         || streamDataRaw.default?.SD1?.main?.flv
+        || streamDataRaw.default?.["1080p"]?.main?.flv
+        || streamDataRaw.origin?.main?.flv
+        || streamDataRaw.FULL_HD1?.main?.flv
         || "";
     }
+    
+    // Bruteforce fallback if structured search failed
+    if (!hls && streamDataRaw) hls = forceExtractM3u8(streamDataRaw);
+    if (!flv && streamDataRaw) flv = forceExtractFlv(streamDataRaw);
   }
 
   if (!hls && obj.hls_pull_url_map && typeof obj.hls_pull_url_map === "object") {
+    // If specific keys aren't found, just grab the first available HLS URL string from the map
     const keys = Object.keys(obj.hls_pull_url_map);
-    if (keys.length > 0) hls = obj.hls_pull_url_map[keys[0]] || "";
+    for (const k of keys) {
+       const val = obj.hls_pull_url_map[k];
+       if (typeof val === "string" && val.includes(".m3u8")) {
+          hls = val;
+          break;
+       }
+    }
+  }
+
+  // Very aggressive fallback if nested in unknown resolution objects
+  if (!hls && typeof obj === "object" && obj !== null) {
+     hls = forceExtractM3u8(obj);
+  }
+  if (!flv && typeof obj === "object" && obj !== null) {
+     flv = forceExtractFlv(obj);
   }
 
   return { hls, flv };
@@ -207,6 +262,19 @@ export async function GET(req: NextRequest) {
           safeEnqueue(JSON.stringify({ type: "stats", data: { giftsIncrement: count } }));
         });
 
+        // Listen for link mic / PK battles to get opponents
+        tiktokConnection.on('linkMicBattle' as any, (data: any) => {
+           if (data?.battleUsers) {
+               safeEnqueue(JSON.stringify({ type: "battle", data: data.battleUsers }));
+           }
+        });
+        
+        tiktokConnection.on('linkMicArmies' as any, (data: any) => {
+           if (data?.battleArmies) {
+               safeEnqueue(JSON.stringify({ type: "battle_update", data: data.battleArmies }));
+           }
+        });
+
         tiktokConnection.on(ControlEvent.ERROR, (err: any) => {
           const errorMessage = getErrorMessage(err);
           console.log(`[TikTok] Stream error for ${username}: ${errorMessage}`);
@@ -249,21 +317,25 @@ export async function GET(req: NextRequest) {
         
         let finalHls = fastStreamExtracted.hls || "";
         
+        // We will send connected IMMEDIATELY so chat can load, even if we don't have HLS yet!
+        safeEnqueue(JSON.stringify({
+          type: "connected",
+          username,
+          roomInfo: {
+            viewers: getNumber(fastRoomData.user_count, fastRoomData.userCount, fastRoomData.viewer_count, fastRoomData.viewerCount),
+            likes: getNumber(fastRoomData.like_count, fastRoomData.likeCount, fastRoomData.total_like_count),
+            shares: getNumber(fastRoomData.share_count, fastRoomData.shareCount),
+            followers: getNumber(fastRoomData.owner?.follow_info?.follower_count, fastRoomData.owner?.followInfo?.followerCount, fastRoomData.owner?.follower_count, fastRoomData.owner?.followerCount),
+            avatarUrl: fastRoomData.owner?.avatar_thumb?.url_list?.[0] || fastRoomData.owner?.avatarThumb?.urlList?.[0] || fastRoomData.owner?.avatar_medium?.url_list?.[0],
+            title: fastRoomData.title || fastLiveRoom.title || fastRoom.title || "",
+            nickname: fastRoomData.owner?.nickname || fastRoomData.owner?.display_id || username,
+            hlsPullUrl: finalHls,
+            flvPullUrl: fastStreamExtracted.flv,
+            coverUrl: fastRoomData.cover?.url_list?.[0] || fastRoomData.cover?.urlList?.[0] || fastLiveRoom.cover?.url_list?.[0],
+          }
+        }));
+
         if (fastStreamExtracted.hls) {
-            safeEnqueue(JSON.stringify({
-              type: "connected",
-              username,
-              roomInfo: {
-                viewers: getNumber(fastRoomData.user_count, fastRoomData.userCount, fastRoomData.viewer_count, fastRoomData.viewerCount),
-                likes: getNumber(fastRoomData.like_count, fastRoomData.likeCount, fastRoomData.total_like_count),
-                avatarUrl: fastRoomData.owner?.avatar_thumb?.url_list?.[0] || fastRoomData.owner?.avatarThumb?.urlList?.[0] || fastRoomData.owner?.avatar_medium?.url_list?.[0],
-                title: fastRoomData.title || fastLiveRoom.title || fastRoom.title || "",
-                nickname: fastRoomData.owner?.nickname || fastRoomData.owner?.display_id || username,
-                hlsPullUrl: finalHls, // Use the FULL HLS URL
-                flvPullUrl: fastStreamExtracted.flv,
-                coverUrl: fastRoomData.cover?.url_list?.[0] || fastRoomData.cover?.urlList?.[0] || fastLiveRoom.cover?.url_list?.[0],
-              }
-            }));
             shouldProceed = true;
         }
 
@@ -342,17 +414,46 @@ export async function GET(req: NextRequest) {
         if (!hlsPullUrl) {
           try {
             const webClient = (tiktokConnection as any).webClient;
-            const apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
+            
+            // Try fetching from the web API first
+            let apiData = await webClient.getJsonObjectFromTikTokApi("api-live/user/room/", {
               ...webClient.clientParams,
               uniqueId: username,
               sourceType: "54",
             });
-            const apiLiveRoom = apiData?.data?.liveRoom || {};
-            const apiStreamUrl = apiLiveRoom.streamData || apiLiveRoom.stream_url || {};
-            const apiExtracted = deepExtractStreamUrl(apiStreamUrl);
+            
+            let apiLiveRoom = apiData?.data?.liveRoom || apiData?.data?.room || {};
+            let apiStreamUrl = apiLiveRoom.streamData || apiLiveRoom.stream_url || apiLiveRoom.streamDataJson || {};
+            let apiExtracted = deepExtractStreamUrl(apiStreamUrl);
+            
+            // If that fails, TikTok sometimes completely hides it from web clients for PKs
+            // We can try to extract directly from the raw HTML of the user's live page
+            if (!apiExtracted.hls) {
+               try {
+                 const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
+                 // Scrape the SIGI_STATE directly from the HTML
+                 const sigiMatch = html.match(/<script id="SIGI_STATE" type="application\/json">(.*?)<\/script>/);
+                 if (sigiMatch) {
+                   const sigiObj = JSON.parse(sigiMatch[1]);
+                   const str = JSON.stringify(sigiObj);
+                   // Bruteforce the entire state for an m3u8 url
+                   const m3Match = str.match(/(https?:\/\/[^\s"',]+\.m3u8[^\s"',]*)/);
+                   if (m3Match) {
+                      apiExtracted.hls = m3Match[1].replace(/\\u0026/g, '&');
+                   }
+                   
+                   // Get fallback title/cover if missing
+                   if (!title) {
+                     const titleMatch = str.match(/"title":"([^"]+)"/);
+                     if (titleMatch) title = titleMatch[1];
+                   }
+                 }
+               } catch (htmlErr) {}
+            }
+            
             if (apiExtracted.hls) {
               hlsPullUrl = apiExtracted.hls;
-              flvPullUrl = apiExtracted.flv;
+              if (apiExtracted.flv) flvPullUrl = apiExtracted.flv;
             }
 
             if (!title) title = apiLiveRoom.title || "";
@@ -367,7 +468,7 @@ export async function GET(req: NextRequest) {
         // or missing stream URL, let's trigger it now. We ensure this always gets sent when connect() succeeds.
 
         safeEnqueue(JSON.stringify({
-          type: "connected",
+          type: "stream_url",
           username,
           roomInfo: {
             viewers: getNumber(
