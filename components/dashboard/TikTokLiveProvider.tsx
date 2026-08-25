@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useMemo, useState, useEffect } from "react";
+import React, { createContext, useContext, useMemo, useState, useEffect, useRef } from "react";
 
 export type StreamerInfo = {
   title: string;
@@ -39,13 +39,118 @@ interface TikTokLiveContextType {
   setStats: (stats: Partial<TikTokLiveContextType["stats"]>) => void;
   streamUrl: { hls?: string; flv?: string; cover?: string };
   setStreamUrl: (urls: { hls?: string; flv?: string; cover?: string }) => void;
-  lastGift: { username: string; avatarUrl: string; giftName: string; giftIcon: string; count: number; id: string } | null;
+  lastGift: { username: string; avatarUrl: string; giftName: string; giftIcon: string; count: number; id: string; diamondCount: number } | null;
   setLastGift: (gift: TikTokLiveContextType["lastGift"]) => void;
   lastLike: { username: string; count: number; id: string } | null;
   setLastLike: (like: TikTokLiveContextType["lastLike"]) => void;
   battleOpponents: { username: string; avatarUrl: string; nickname?: string }[];
   setBattleOpponents: (opponents: TikTokLiveContextType["battleOpponents"]) => void;
+  goal: GoalData | null;
+  setGoal: (goal: GoalData | null) => void;
+  topContributors: Contributor[];
+  addContribution: (username: string, avatarUrl: string, giftName: string, giftCount: number, diamondCount: number) => void;
+  recentActivity: ActivityEvent[];
+  setRecentActivity: React.Dispatch<React.SetStateAction<ActivityEvent[]>>;
+  ranks: RankEntry[];
+  setRanks: React.Dispatch<React.SetStateAction<RankEntry[]>>;
+  polls: PollData[];
+  setPolls: React.Dispatch<React.SetStateAction<PollData[]>>;
+  captions: CaptionData[];
+  setCaptions: React.Dispatch<React.SetStateAction<CaptionData[]>>;
+  superFans: SuperFanData[];
+  setSuperFans: React.Dispatch<React.SetStateAction<SuperFanData[]>>;
+  envelopes: EnvelopeData[];
+  setEnvelopes: React.Dispatch<React.SetStateAction<EnvelopeData[]>>;
+  questions: QuestionData[];
+  setQuestions: React.Dispatch<React.SetStateAction<QuestionData[]>>;
 }
+
+export type Contributor = {
+  username: string;
+  avatarUrl: string;
+  totalGifts: number;
+  totalDiamonds: number;
+};
+
+export type ActivityEvent = {
+  id: string;
+  type: "gift" | "like" | "follow" | "share" | "super_fan" | "envelope";
+  username: string;
+  avatarUrl: string;
+  detail: string;
+  timestamp: number;
+};
+
+export type RankEntry = {
+  rank: number;
+  username: string;
+  avatarUrl: string;
+  score: number;
+  nickname?: string;
+};
+
+export type PollData = {
+  id: string;
+  question: string;
+  options: { id: string; text: string; voteCount: number; votePercentage: number }[];
+  status: string;
+  startTime: number;
+  endTime: number;
+};
+
+export type CaptionData = {
+  text: string;
+  timestamp: number;
+};
+
+export type SuperFanData = {
+  username: string;
+  avatarUrl: string;
+  nickname: string;
+  timestamp: number;
+};
+
+export type EnvelopeData = {
+  id: string;
+  senderName: string;
+  senderAvatar: string;
+  diamondCount: number;
+  timestamp: number;
+};
+
+export type QuestionData = {
+  id: string;
+  username: string;
+  avatarUrl: string;
+  text: string;
+  timestamp: number;
+};
+
+export type GoalData = {
+  id: string;
+  description: string;
+  status: number;
+  challengeType: string;
+  subGoals: {
+    id: string;
+    type: number;
+    progress: number;
+    target: number;
+    giftName: string;
+    giftIcon: string;
+    diamondCount: number;
+  }[];
+  contributors: {
+    userId: string;
+    displayId: string;
+    avatarUrl: string;
+    score: number;
+  }[];
+  stats: {
+    totalCoins: number;
+    totalContributor: number;
+  };
+};
 
 function createStreamerInfo(username: string, profileImage?: string): StreamerInfo {
   const cleanUsername = username.replace("@", "").trim();
@@ -89,6 +194,24 @@ const TikTokLiveContext = createContext<TikTokLiveContextType>({
   setLastLike: () => {},
   battleOpponents: [],
   setBattleOpponents: () => {},
+  goal: null,
+  setGoal: () => {},
+  topContributors: [],
+  addContribution: () => {},
+  recentActivity: [],
+  setRecentActivity: () => {},
+  ranks: [],
+  setRanks: (() => {}) as React.Dispatch<React.SetStateAction<RankEntry[]>>,
+  polls: [],
+  setPolls: (() => {}) as React.Dispatch<React.SetStateAction<PollData[]>>,
+  captions: [],
+  setCaptions: (() => {}) as React.Dispatch<React.SetStateAction<CaptionData[]>>,
+  superFans: [],
+  setSuperFans: (() => {}) as React.Dispatch<React.SetStateAction<SuperFanData[]>>,
+  envelopes: [],
+  setEnvelopes: (() => {}) as React.Dispatch<React.SetStateAction<EnvelopeData[]>>,
+  questions: [],
+  setQuestions: (() => {}) as React.Dispatch<React.SetStateAction<QuestionData[]>>,
 });
 
 export const useTikTokLive = () => useContext(TikTokLiveContext);
@@ -109,13 +232,24 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
   const [lastGift, setLastGiftState] = useState<TikTokLiveContextType["lastGift"]>(null);
   const [lastLike, setLastLikeState] = useState<TikTokLiveContextType["lastLike"]>(null);
   const [battleOpponents, setBattleOpponents] = useState<TikTokLiveContextType["battleOpponents"]>([]);
+  const [goal, setGoal] = useState<GoalData | null>(null);
+  const [topContributors, setTopContributors] = useState<Contributor[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityEvent[]>([]);
+  const [ranks, setRanks] = useState<RankEntry[]>([]);
+  const [polls, setPolls] = useState<PollData[]>([]);
+  const [captions, setCaptions] = useState<CaptionData[]>([]);
+  const [superFans, setSuperFans] = useState<SuperFanData[]>([]);
+  const [envelopes, setEnvelopes] = useState<EnvelopeData[]>([]);
+  const [questions, setQuestions] = useState<QuestionData[]>([]);
+  const recentIdsRef = useRef(new Set<string>());
 
   // Auto-clear gift overlay after a few seconds
   useEffect(() => {
      if (lastGift) {
+       const isBigGift = lastGift.diamondCount >= 100;
        const timer = setTimeout(() => {
           setLastGiftState(null);
-       }, 4000); // Overlay stays for 4 seconds
+       }, isBigGift ? 6000 : 4000);
        return () => clearTimeout(timer);
      }
   }, [lastGift]);
@@ -157,6 +291,15 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
       setLastGiftState(null);
       setLastLikeState(null);
       setBattleOpponents([]);
+      setGoal(null);
+      setTopContributors([]);
+      setRecentActivity([]);
+      setRanks([]);
+      setPolls([]);
+      setCaptions([]);
+      setSuperFans([]);
+      setEnvelopes([]);
+      setQuestions([]);
     }
   }, []);
 
@@ -166,6 +309,40 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
 
   const setStreamUrl = React.useCallback((urls: { hls?: string; flv?: string; cover?: string }) => {
     setStreamUrlState(urls);
+  }, []);
+
+  const addContribution = React.useCallback((username: string, avatarUrl: string, giftName: string, giftCount: number, diamondCount: number) => {
+    const dedupeKey = `${username}-${giftName}-${giftCount}-${Math.floor(Date.now() / 2000)}`;
+    if (recentIdsRef.current.has(dedupeKey)) return;
+    recentIdsRef.current.add(dedupeKey);
+    if (recentIdsRef.current.size > 100) {
+      const first = recentIdsRef.current.values().next().value;
+      if (first) recentIdsRef.current.delete(first);
+    }
+
+    setTopContributors(prev => {
+      const existing = prev.find(c => c.username === username);
+      if (existing) {
+        return prev.map(c => c.username === username
+          ? { ...c, totalGifts: c.totalGifts + giftCount, totalDiamonds: c.totalDiamonds + diamondCount }
+          : c
+        ).sort((a, b) => b.totalDiamonds - a.totalDiamonds).slice(0, 20);
+      }
+      return [...prev, { username, avatarUrl, totalGifts: giftCount, totalDiamonds: diamondCount }]
+        .sort((a, b) => b.totalDiamonds - a.totalDiamonds).slice(0, 20);
+    });
+
+    setRecentActivity(prev => {
+      const event: ActivityEvent = {
+        id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type: "gift",
+        username,
+        avatarUrl,
+        detail: `${giftName} x${giftCount}`,
+        timestamp: Date.now(),
+      };
+      return [event, ...prev].slice(0, 30);
+    });
   }, []);
 
   React.useEffect(() => {
@@ -210,8 +387,26 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
         setLastLike: setLastLikeState,
         battleOpponents,
         setBattleOpponents,
+        goal,
+        setGoal,
+        topContributors,
+        addContribution,
+        recentActivity,
+        setRecentActivity,
+        ranks,
+        setRanks,
+        polls,
+        setPolls,
+        captions,
+        setCaptions,
+        superFans,
+        setSuperFans,
+        envelopes,
+        setEnvelopes,
+        questions,
+        setQuestions,
       }),
-    [streamerInfo, activeUsername, setActiveUsername, status, stats, setStatus, setProfileImage, setStreamerDetails, setStreamUrl, incrementStats, setStats, streamUrl, lastGift, setLastGiftState, lastLike, setLastLikeState, battleOpponents, setBattleOpponents],
+    [streamerInfo, activeUsername, setActiveUsername, status, stats, setStatus, setProfileImage, setStreamerDetails, setStreamUrl, incrementStats, setStats, streamUrl, lastGift, setLastGiftState, lastLike, setLastLikeState, battleOpponents, setBattleOpponents, goal, setGoal, topContributors, addContribution, recentActivity, setRecentActivity, ranks, polls, captions, superFans, envelopes, questions],
   );
 
   return <TikTokLiveContext.Provider value={value}>{children}</TikTokLiveContext.Provider>;

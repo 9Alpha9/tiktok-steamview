@@ -241,33 +241,46 @@ export function StreamPlayer() {
         className="relative flex-1 bg-[#0e1015] flex items-center justify-center overflow-hidden min-h-0"
         onMouseMove={handleMouseMove}
       >
-        {/* Like Overlay Animation */}
-        <AnimatePresence>
-          {lastLike && activeUsername && (
-             <motion.div
-               key={lastLike.id}
-               initial={{ opacity: 0, y: 20, scale: 0.8 }}
-               animate={{ opacity: 1, y: 0, scale: 1 }}
-               exit={{ opacity: 0, y: -40, scale: 1.2, transition: { duration: 0.4 } }}
-               className="absolute bottom-32 right-4 z-30 flex flex-col items-center pointer-events-none"
-             >
-               <motion.div 
-                 className="text-[#FF0050] font-black text-2xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
-                 animate={{ scale: [1, 1.3, 1], rotate: [-10, 10, 0] }}
-                 transition={{ duration: 0.4, ease: "easeOut" }}
-               >
-                 ❤️
-               </motion.div>
-               <span className="text-white text-[10px] font-bold mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                 {lastLike.username} sent likes!
-               </span>
-             </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Like Overlay Animation — Floating Hearts TikTok Style */}
+        {lastLike && activeUsername && (
+          <div className="absolute bottom-16 right-4 z-30 pointer-events-none w-8 h-40">
+            {Array.from({ length: Math.min(lastLike.count, 15) }).map((_, i) => {
+              const delay = i * 0.08;
+              const size = 18 + Math.random() * 8;
+              const xDrift = -6 + Math.random() * 12;
+              const yHeight = 100 + Math.random() * 60;
+              const rotate = -15 + Math.random() * 30;
+              return (
+                <motion.div
+                  key={`heart-${lastLike.id}-${i}`}
+                  className="absolute bottom-0 left-1/2 -translate-x-1/2"
+                  initial={{ opacity: 1, y: 0, x: 0, scale: 0.2, rotate: 0 }}
+                  animate={{
+                    opacity: [1, 1, 0.8, 0],
+                    y: -yHeight,
+                    x: [0, xDrift * 0.3, xDrift],
+                    scale: [0.2, 0.9, 1, 0.6],
+                    rotate: [0, rotate * 0.5, rotate],
+                  }}
+                  transition={{
+                    duration: 1.6,
+                    delay,
+                    ease: [0.1, 0.7, 0.3, 1],
+                    opacity: { times: [0, 0.3, 0.7, 1] },
+                    scale: { times: [0, 0.2, 0.6, 1] },
+                  }}
+                  style={{ fontSize: `${size}px`, filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.4))" }}
+                >
+                  ❤️
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
 
-        {/* Gift Overlay Animation */}
+        {/* Gift Overlay Animation — Small Notification (Regular Gifts) */}
         <AnimatePresence>
-          {lastGift && activeUsername && (
+          {lastGift && activeUsername && lastGift.diamondCount < 100 && (
              <motion.div
                key={lastGift.id}
                initial={{ opacity: 0, x: -50, scale: 0.9 }}
@@ -300,6 +313,88 @@ export function StreamPlayer() {
                     x{lastGift.count}
                   </motion.span>
                )}
+             </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Gift Overlay Animation — Big Center Celebration (Expensive Gifts) */}
+        <AnimatePresence>
+          {lastGift && activeUsername && lastGift.diamondCount >= 100 && (
+             <motion.div
+               key={`big-${lastGift.id}`}
+               initial={{ opacity: 0, scale: 0.3, y: 50 }}
+               animate={{ opacity: 1, scale: 1, y: 0 }}
+               exit={{ opacity: 0, scale: 0.5, y: -30, transition: { duration: 0.5 } }}
+               className="absolute inset-0 z-50 flex flex-col items-center justify-center pointer-events-none"
+             >
+               {/* Glow background */}
+               <motion.div 
+                 className="absolute inset-0"
+                 style={{ background: 'radial-gradient(circle at center, rgba(251,191,36,0.2) 0%, transparent 70%)' }}
+                 initial={{ opacity: 0 }}
+                 animate={{ opacity: [0, 0.6, 0.3] }}
+                 transition={{ duration: 1.5 }}
+               />
+               
+               {/* Gift icon big */}
+               {lastGift.giftIcon && (
+                 <motion.img 
+                   src={lastGift.giftIcon} 
+                   alt={lastGift.giftName} 
+                   className="w-24 h-24 object-contain drop-shadow-[0_0_30px_rgba(251,191,36,0.5)]"
+                   initial={{ scale: 0, rotate: -30, y: 30 }}
+                   animate={{ scale: [0, 1.3, 1], rotate: [-30, 10, 0], y: [30, -10, 0] }}
+                   transition={{ duration: 0.8, type: 'spring', bounce: 0.4 }}
+                 />
+               )}
+               
+               {/* Gift name */}
+               <motion.div
+                 initial={{ opacity: 0, y: 10 }}
+                 animate={{ opacity: 1, y: 0 }}
+                 transition={{ delay: 0.3, duration: 0.4 }}
+                 className="mt-3 text-center"
+               >
+                 <span className="text-2xl font-black text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+                   {lastGift.giftName}
+                 </span>
+                 {lastGift.count > 1 && (
+                   <span className="text-amber-400 font-black text-3xl ml-2 drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+                     x{lastGift.count}
+                   </span>
+                 )}
+               </motion.div>
+               
+               {/* Sender */}
+               <motion.div
+                 initial={{ opacity: 0, y: 10 }}
+                 animate={{ opacity: 1, y: 0 }}
+                 transition={{ delay: 0.5, duration: 0.4 }}
+                 className="mt-2 flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-full px-4 py-1.5"
+               >
+                 <Avatar src={lastGift.avatarUrl} alt={lastGift.username} size="sm" fallback={lastGift.username[0]} className="w-6 h-6 border border-amber-400/50" />
+                 <span className="text-sm font-semibold text-amber-200">{lastGift.username}</span>
+               </motion.div>
+
+               {/* Particle sparkles */}
+               {Array.from({ length: 8 }).map((_, i) => {
+                 const angle = (i / 8) * Math.PI * 2;
+                 const dist = 60 + Math.random() * 40;
+                 return (
+                   <motion.div
+                     key={`sparkle-${lastGift.id}-${i}`}
+                     className="absolute w-2 h-2 rounded-full bg-amber-400"
+                     initial={{ opacity: 0, x: 0, y: 0, scale: 0 }}
+                     animate={{
+                       opacity: [0, 1, 0],
+                       x: Math.cos(angle) * dist,
+                       y: Math.sin(angle) * dist,
+                       scale: [0, 1.5, 0],
+                     }}
+                     transition={{ duration: 1, delay: 0.2 + i * 0.05, ease: 'easeOut' }}
+                   />
+                 );
+               })}
              </motion.div>
           )}
         </AnimatePresence>

@@ -225,15 +225,9 @@ export async function GET(req: NextRequest) {
         });
 
         tiktokConnection.on(WebcastEvent.LIKE, (data: any) => {
-          const likes = getNumber(data.totalLikeCount, data.likeCount);
           const likesIncrement = data.likeCount || 1;
           const likeSender = data.user;
-          
-          if (likes > 0) {
-            safeEnqueue(JSON.stringify({ type: "stats", data: { likes, likesIncrement, likeSender } }));
-          } else {
-             safeEnqueue(JSON.stringify({ type: "stats", data: { likesIncrement, likeSender } }));
-          }
+          safeEnqueue(JSON.stringify({ type: "stats", data: { likesIncrement, likeSender } }));
         });
 
         tiktokConnection.on(WebcastEvent.SOCIAL, (data: any) => {
@@ -275,6 +269,48 @@ export async function GET(req: NextRequest) {
            if (data?.battleArmies) {
                safeEnqueue(JSON.stringify({ type: "battle_update", data: data.battleArmies }));
            }
+        });
+
+        tiktokConnection.on(WebcastEvent.GOAL_UPDATE, (data: any) => {
+           const goal = data?.goal;
+           if (goal) {
+             safeEnqueue(JSON.stringify({ type: "goal", data: goal }));
+           }
+        });
+
+        // Rank Update — top gifter rankings
+        tiktokConnection.on('rankUpdate' as any, (data: any) => {
+           safeEnqueue(JSON.stringify({ type: "rank_update", data }));
+        });
+
+        // Rank Text — rank change notifications
+        tiktokConnection.on('rankText' as any, (data: any) => {
+           safeEnqueue(JSON.stringify({ type: "rank_text", data }));
+        });
+
+        // Poll — creator-launched polls
+        tiktokConnection.on('pollMessage' as any, (data: any) => {
+           safeEnqueue(JSON.stringify({ type: "poll", data }));
+        });
+
+        // Caption — auto-captions from streamer audio
+        tiktokConnection.on('captionMessage' as any, (data: any) => {
+           safeEnqueue(JSON.stringify({ type: "caption", data }));
+        });
+
+        // Super Fan — viewer becomes super fan
+        tiktokConnection.on('superFan' as any, (data: any) => {
+           safeEnqueue(JSON.stringify({ type: "super_fan", data }));
+        });
+
+        // Envelope — treasure chest / amplop
+        tiktokConnection.on('envelope' as any, (data: any) => {
+           safeEnqueue(JSON.stringify({ type: "envelope", data }));
+        });
+
+        // Question New — audience Q&A
+        tiktokConnection.on('questionNew' as any, (data: any) => {
+           safeEnqueue(JSON.stringify({ type: "question", data }));
         });
 
         tiktokConnection.on(ControlEvent.ERROR, (err: any) => {

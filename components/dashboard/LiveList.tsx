@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Avatar } from "@/components/ui/Avatar";
 import { Card } from "@/components/ui/Card";
 import { useTikTokLive } from "./TikTokLiveProvider";
+import { StreamStats } from "./StreamStats";
 import { useEffect, useState, useCallback, useRef } from "react";
 
 interface SuggestedLive {
@@ -99,6 +100,8 @@ export function LiveList() {
             </motion.div>
           </div>
         )}
+
+        {isLive && <StreamStats />}
 
         {filtered.length > 0 && (
           <div>

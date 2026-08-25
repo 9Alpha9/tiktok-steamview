@@ -7,7 +7,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 
 interface ChatEvent {
-  type: "chat" | "gift" | "connected" | "disconnected" | "error" | "stream_end" | "stats" | "battle" | "battle_update" | "stream_url";
+  type: "chat" | "gift" | "connected" | "disconnected" | "error" | "stream_end" | "stats" | "battle" | "battle_update" | "stream_url" | "goal" | "rank_update" | "rank_text" | "poll" | "caption" | "super_fan" | "envelope" | "question";
   data?: any;
   message?: unknown;
   username?: string;
@@ -249,7 +249,7 @@ export function LiveChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { activeUsername, incrementStats, setProfileImage, setStats, setStatus, status, setStreamerDetails, setStreamUrl, setLastGift, setLastLike, setBattleOpponents } = useTikTokLive();
+  const { activeUsername, incrementStats, setProfileImage, setStats, setStatus, status, setStreamerDetails, setStreamUrl, setLastGift, setLastLike, setBattleOpponents, setGoal, addContribution, setRanks, setPolls, setCaptions, setSuperFans, setEnvelopes, setQuestions, recentActivity, setRecentActivity } = useTikTokLive();
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -290,6 +290,7 @@ export function LiveChat() {
 
           if (payload.type === "disconnected" || payload.type === "stream_end") {
             setBattleOpponents([]);
+            setGoal(null);
           }
 
           if (payload.type === "stream_end") {
@@ -361,6 +362,171 @@ export function LiveChat() {
              }
           }
 
+          if (payload.type === "goal" && payload.data) {
+            const g = payload.data;
+            const subGoals = (g.subGoals || []).map((sg: any) => ({
+              id: sg.idStr || sg.id || "",
+              type: sg.type || 0,
+              progress: Number(sg.progress) || 0,
+              target: Number(sg.target) || 0,
+              giftName: sg.gift?.name || sg.recommendedText || "",
+              giftIcon: sg.gift?.icon?.url_list?.[0] || sg.gift?.icon?.urlList?.[0] || "",
+              diamondCount: Number(sg.gift?.diamondCount) || 0,
+            }));
+            const contributors = (g.contributors || []).map((c: any) => ({
+              userId: c.userIdStr || c.userId || "",
+              displayId: c.displayId || "",
+              avatarUrl: c.avatar?.url_list?.[0] || c.avatar?.urlList?.[0] || "",
+              score: Number(c.score) || 0,
+            }));
+            setGoal({
+              id: g.idStr || g.id || "",
+              description: g.description || "",
+              status: g.status || 0,
+              challengeType: g.challengeType || "",
+              subGoals,
+              contributors,
+              stats: {
+                totalCoins: Number(g.stats?.totalCoins) || 0,
+                totalContributor: Number(g.stats?.totalContributor) || 0,
+              },
+            });
+          }
+
+          // Rank Update — top gifter leaderboard
+          if (payload.type === "rank_update" && payload.data) {
+            const ranksData = payload.data?.rankings || payload.data?.rankList || [];
+            if (Array.isArray(ranksData)) {
+              const parsed = ranksData.map((r: any, i: number) => ({
+                rank: r.rank || i + 1,
+                username: r.user?.displayId || r.user?.uniqueId || r.user?.nickname || "",
+                avatarUrl: r.user?.avatarThumb?.urlList?.[0] || r.user?.avatar_thumb?.url_list?.[0] || "",
+                score: Number(r.score) || 0,
+                nickname: r.user?.nickname || "",
+              }));
+              setRanks(parsed);
+            }
+          }
+
+          // Rank Text — rank change notification (add to activity)
+          if (payload.type === "rank_text" && payload.data) {
+            const user = payload.data?.user;
+            if (user) {
+              const username = user.displayId || user.uniqueId || user.nickname || "";
+              const rank = payload.data?.rank || 0;
+              setRecentActivity(prev => {
+                const event = {
+                  id: `rank-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  type: "gift" as const,
+                  username,
+                  avatarUrl: user.avatarThumb?.urlList?.[0] || "",
+                  detail: `Reached rank #${rank}`,
+                  timestamp: Date.now(),
+                };
+                return [event, ...prev].slice(0, 30);
+              });
+            }
+          }
+
+          // Poll — creator-launched polls
+          if (payload.type === "poll" && payload.data) {
+            const p = payload.data;
+            const pollData = {
+              id: p.idStr || p.id || `poll-${Date.now()}`,
+              question: p.question || "",
+              options: (p.options || []).map((o: any) => ({
+                id: o.idStr || o.id || "",
+                text: o.text || "",
+                voteCount: Number(o.voteCount) || 0,
+                votePercentage: Number(o.votePercentage) || 0,
+              })),
+              status: p.status || "active",
+              startTime: Number(p.startTime) || Date.now(),
+              endTime: Number(p.endTime) || Date.now() + 60000,
+            };
+            setPolls(prev => {
+              const existing = prev.findIndex(x => x.id === pollData.id);
+              if (existing >= 0) {
+                return prev.map((x, i) => i === existing ? pollData : x);
+              }
+              return [pollData, ...prev].slice(0, 5);
+            });
+          }
+
+          // Caption — auto-captions from streamer audio
+          if (payload.type === "caption" && payload.data) {
+            const text = payload.data?.text || payload.data?.caption || "";
+            if (text) {
+              setCaptions(prev => {
+                const newCaption = { text, timestamp: Date.now() };
+                return [newCaption, ...prev].slice(0, 20);
+              });
+            }
+          }
+
+          // Super Fan — viewer becomes super fan
+          if (payload.type === "super_fan" && payload.data) {
+            const user = payload.data?.user;
+            if (user) {
+              const fanData = {
+                username: user.displayId || user.uniqueId || user.nickname || "",
+                avatarUrl: user.avatarThumb?.urlList?.[0] || "",
+                nickname: user.nickname || "",
+                timestamp: Date.now(),
+              };
+              setSuperFans(prev => [fanData, ...prev].slice(0, 20));
+              setRecentActivity(prev => {
+                const event = {
+                  id: `sf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  type: "super_fan" as const,
+                  username: fanData.username,
+                  avatarUrl: fanData.avatarUrl,
+                  detail: "Became a Super Fan",
+                  timestamp: Date.now(),
+                };
+                return [event, ...prev].slice(0, 30);
+              });
+            }
+          }
+
+          // Envelope — treasure chest / amplop
+          if (payload.type === "envelope" && payload.data) {
+            const envData = {
+              id: payload.data?.idStr || payload.data?.id || `env-${Date.now()}`,
+              senderName: payload.data?.senderName || payload.data?.user?.displayId || "",
+              senderAvatar: payload.data?.senderAvatar || payload.data?.user?.avatarThumb?.urlList?.[0] || "",
+              diamondCount: Number(payload.data?.diamondCount) || 0,
+              timestamp: Date.now(),
+            };
+            setEnvelopes(prev => [envData, ...prev].slice(0, 10));
+            setRecentActivity(prev => {
+              const event = {
+                id: `env-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                type: "envelope" as const,
+                username: envData.senderName,
+                avatarUrl: envData.senderAvatar,
+                detail: `Sent envelope (${envData.diamondCount} diamonds)`,
+                timestamp: Date.now(),
+              };
+              return [event, ...prev].slice(0, 30);
+            });
+          }
+
+          // Question — audience Q&A
+          if (payload.type === "question" && payload.data) {
+            const user = payload.data?.user;
+            if (user) {
+              const qData = {
+                id: payload.data?.idStr || payload.data?.id || `q-${Date.now()}`,
+                username: user.displayId || user.uniqueId || user.nickname || "",
+                avatarUrl: user.avatarThumb?.urlList?.[0] || "",
+                text: payload.data?.question || payload.data?.text || "",
+                timestamp: Date.now(),
+              };
+              setQuestions(prev => [qData, ...prev].slice(0, 20));
+            }
+          }
+
           if (payload.type === "chat" && payload.data) {
             setMessages(prev => {
               const user = payload.data?.user;
@@ -379,19 +545,21 @@ export function LiveChat() {
           }
 
           if (payload.type === "gift" && payload.data) {
-            setMessages(prev => {
-              const user = payload.data?.user;
-              const giftName = payload.data?.gift?.name || payload.data?.giftName || "a gift";
-              const giftCount = payload.data?.comboCount || payload.data?.repeatCount || 1;
-              const avatar = user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl;
-              const icon = payload.data?.gift?.image?.urlList?.[0] || payload.data?.gift?.icon?.urlList?.[0] || payload.data?.giftPictureUrl;
-              const username = user?.displayId || user?.nickname || payload.data?.uniqueId || "User";
-              const id = payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift");
-              
-              setTimeout(() => {
-                 setLastGift({ username, avatarUrl: avatar, giftName, giftIcon: icon, count: giftCount, id });
-              }, 0);
+            const user = payload.data?.user;
+            const giftName = payload.data?.gift?.name || payload.data?.giftName || "a gift";
+            const giftCount = payload.data?.comboCount || payload.data?.repeatCount || 1;
+            const avatar = user?.avatarThumb?.urlList?.[0] || payload.data?.profilePictureUrl;
+            const icon = payload.data?.gift?.image?.urlList?.[0] || payload.data?.gift?.icon?.urlList?.[0] || payload.data?.giftPictureUrl;
+            const username = user?.displayId || user?.nickname || payload.data?.uniqueId || "User";
+            const id = payload.data?.common?.msgId ? `gift-${payload.data.common.msgId}-${Date.now()}` : uniqueId("gift");
+            const diamondCount = payload.data?.gift?.diamondCount || payload.data?.gift?.diamond_count || 0;
 
+            setTimeout(() => {
+              setLastGift({ username, avatarUrl: avatar, giftName, giftIcon: icon, count: giftCount, id, diamondCount: diamondCount * giftCount });
+              addContribution(username, avatar || "", giftName, giftCount, diamondCount * giftCount);
+            }, 0);
+
+            setMessages(prev => {
               const updated = [...prev, {
                 id,
                 type: "gift",
