@@ -185,7 +185,7 @@ export async function GET(req: NextRequest) {
           if (data.action === 3 || data.label?.includes('share')) {
              statsUpdate.sharesIncrement = 1;
           }
-          if (data.action === 1 || data.label?.includes('follow')) {
+          if (data.action === 1 || data.label?.includes('follow') || data.action === 10) {
              statsUpdate.followersIncrement = 1;
           }
           safeEnqueue(JSON.stringify({ type: "stats", data: statsUpdate }));

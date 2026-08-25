@@ -119,7 +119,11 @@ export function LiveChat() {
 
         if (payload.type === "stats" && payload.data) {
           const { giftsIncrement, followersIncrement, sharesIncrement, likesIncrement, ...latestStats } = payload.data;
-          if (Object.keys(latestStats).length > 0) setStats(latestStats);
+          
+          if (Object.keys(latestStats).length > 0) {
+            setStats(latestStats as any);
+          }
+          
           incrementStats({
             gifts: giftsIncrement,
             followers: followersIncrement,
