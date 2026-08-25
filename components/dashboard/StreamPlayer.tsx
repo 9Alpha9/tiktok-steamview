@@ -291,11 +291,11 @@ export function StreamPlayer() {
                    transition={{ duration: 0.5, type: 'spring', bounce: 0.5 }}
                  />
                )}
-                {lastGift.count > 1 && (
+               {lastGift.count > 1 && (
                   <motion.span 
                     initial={{ scale: 0, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    className="text-[#FF0050] font-black text-xl italic ml-1 drop-shadow-md"
+                    className="text-[#FF0050] font-black text-xl italic ml-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
                   >
                     x{lastGift.count}
                   </motion.span>
@@ -324,13 +324,22 @@ export function StreamPlayer() {
              </div>
 
              {/* Detailed User Labels (VS) */}
-             <div className="flex gap-2 w-full mt-1 justify-end">
-               {battleOpponents.slice(0, 3).map((opponent, idx) => (
-                 <div key={idx} className="bg-black/60 backdrop-blur-sm rounded-full pr-3 pl-1 py-1 flex items-center gap-2 border border-white/10 pointer-events-auto">
-                    <Avatar src={opponent.avatarUrl} alt={opponent.username} fallback={opponent.username?.[0]} size="sm" className="w-5 h-5 border border-white/20" />
-                    <span className="text-[10px] text-white font-medium leading-none truncate max-w-[70px]">{opponent.nickname || opponent.username}</span>
-                 </div>
-               ))}
+             <div className="flex gap-2 w-full mt-1 justify-between px-1">
+               {/* Main Host Label */}
+               <div className="bg-black/60 backdrop-blur-sm rounded-full pr-3 pl-1 py-1 flex items-center gap-2 border border-white/10 pointer-events-auto shrink-0">
+                  <Avatar src={streamerInfo?.avatar} alt={activeUsername} fallback={activeUsername[0]} size="sm" className="w-5 h-5 border border-white/20" />
+                  <span className="text-[10px] text-white font-medium leading-none truncate max-w-[70px]">{streamerInfo?.nickname || activeUsername}</span>
+               </div>
+               
+               {/* Opponents Label */}
+               <div className="flex gap-2 justify-end">
+                 {battleOpponents.slice(0, 3).map((opponent, idx) => (
+                   <div key={idx} className="bg-black/60 backdrop-blur-sm rounded-full pr-3 pl-1 py-1 flex items-center gap-2 border border-white/10 pointer-events-auto shrink-0">
+                      <Avatar src={opponent.avatarUrl} alt={opponent.username} fallback={opponent.username?.[0]} size="sm" className="w-5 h-5 border border-white/20" />
+                      <span className="text-[10px] text-white font-medium leading-none truncate max-w-[70px]">{opponent.nickname || opponent.username}</span>
+                   </div>
+                 ))}
+               </div>
              </div>
           </div>
         )}

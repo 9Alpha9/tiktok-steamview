@@ -370,10 +370,14 @@ export function LiveChat() {
         if (payload.type === "battle" && Array.isArray(payload.data)) {
            // Parse PK opponents (link mic)
            const opponents = payload.data
-             .filter((u: any) => u.displayId !== activeUsername && u.uniqueId !== activeUsername)
+             .map((item: any) => item.user || item.userProfile || item) // Handle potential nesting
+             .filter((u: any) => {
+                const uid = u.displayId || u.uniqueId || u.display_id || u.unique_id;
+                return uid && uid !== activeUsername;
+             })
              .map((u: any) => ({
-                username: u.displayId || u.uniqueId || u.nickname,
-                avatarUrl: u.avatarThumb?.urlList?.[0] || u.avatar_thumb?.url_list?.[0],
+                username: u.displayId || u.uniqueId || u.display_id || u.unique_id || u.nickname,
+                avatarUrl: u.avatarThumb?.urlList?.[0] || u.avatar_thumb?.url_list?.[0] || u.avatarMedium?.urlList?.[0] || u.avatar_url,
                 nickname: u.nickname
              }));
            
