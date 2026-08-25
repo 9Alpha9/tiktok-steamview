@@ -433,7 +433,17 @@ export async function GET(req: NextRequest) {
                 
                 if (!apiExtracted.hls) {
                    try {
-                     const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
+                     // Disguise as Googlebot to bypass Vercel datacenter IP blocks!
+                     const response = await fetch(`https://www.tiktok.com/@${username}/live`, {
+                       headers: {
+                         'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                         'Accept-Language': 'en-US,en;q=0.5'
+                       },
+                       cache: 'no-store'
+                     });
+                     const html = await response.text();
+                     
                      const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
                      if (m3Match) {
                         apiExtracted.hls = m3Match[1].replace(/\\u0026/g, '&');
