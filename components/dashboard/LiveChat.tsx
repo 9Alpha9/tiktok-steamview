@@ -249,7 +249,7 @@ export function LiveChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { activeUsername, incrementStats, setProfileImage, setStats, setStatus, status, setStreamerDetails, setStreamUrl, setLastGift, setBattleOpponents } = useTikTokLive();
+  const { activeUsername, incrementStats, setProfileImage, setStats, setStatus, status, setStreamerDetails, setStreamUrl, setLastGift, setLastLike, setBattleOpponents } = useTikTokLive();
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -353,6 +353,18 @@ export function LiveChat() {
             shares: sharesIncrement,
             likes: likesIncrement,
           });
+          
+          if (likesIncrement && likesIncrement > 0 && payload.data?.likeSender) {
+             const user = payload.data.likeSender;
+             const username = user?.displayId || user?.nickname || "Someone";
+             setTimeout(() => {
+                setLastLike({ 
+                  username, 
+                  count: likesIncrement, 
+                  id: `like-${Date.now()}-${Math.random()}` 
+                });
+             }, 0);
+          }
         }
 
         if (payload.type === "battle" && Array.isArray(payload.data)) {

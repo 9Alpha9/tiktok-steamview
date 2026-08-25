@@ -226,11 +226,13 @@ export async function GET(req: NextRequest) {
 
         tiktokConnection.on(WebcastEvent.LIKE, (data: any) => {
           const likes = getNumber(data.totalLikeCount, data.likeCount);
+          const likesIncrement = data.likeCount || 1;
+          const likeSender = data.user;
+          
           if (likes > 0) {
-            safeEnqueue(JSON.stringify({ type: "stats", data: { likes } }));
+            safeEnqueue(JSON.stringify({ type: "stats", data: { likes, likesIncrement, likeSender } }));
           } else {
-             // Sometimes like count is not in root data but nested, or we just want to pass the increment
-             safeEnqueue(JSON.stringify({ type: "stats", data: { likesIncrement: data.likeCount || 1 } }));
+             safeEnqueue(JSON.stringify({ type: "stats", data: { likesIncrement, likeSender } }));
           }
         });
 
@@ -431,22 +433,28 @@ export async function GET(req: NextRequest) {
             if (!apiExtracted.hls) {
                try {
                  const html: string = await webClient.getHtmlFromTikTokWebsite(`@${username}/live`);
-                 // Scrape the SIGI_STATE directly from the HTML
-                 const sigiMatch = html.match(/<script id="SIGI_STATE" type="application\/json">(.*?)<\/script>/);
-                 if (sigiMatch) {
-                   const sigiObj = JSON.parse(sigiMatch[1]);
-                   const str = JSON.stringify(sigiObj);
-                   // Bruteforce the entire state for an m3u8 url
-                   const m3Match = str.match(/(https?:\/\/[^\s"',]+\.m3u8[^\s"',]*)/);
-                   if (m3Match) {
-                      apiExtracted.hls = m3Match[1].replace(/\\u0026/g, '&');
-                   }
-                   
-                   // Get fallback title/cover if missing
-                   if (!title) {
-                     const titleMatch = str.match(/"title":"([^"]+)"/);
-                     if (titleMatch) title = titleMatch[1];
-                   }
+                 // Bruteforce the ENTIRE HTML page for any m3u8 url
+                 // TikTok sometimes injects it in weird script tags or attributes
+                 const m3Match = html.match(/(https?:\/\/[^\s"',<>]+\.m3u8[^\s"',<>]*)/);
+                 if (m3Match) {
+                    apiExtracted.hls = m3Match[1].replace(/\\u0026/g, '&');
+                 }
+                 
+                 const flvMatch = html.match(/(https?:\/\/[^\s"',<>]+\.flv[^\s"',<>]*)/);
+                 if (flvMatch && !apiExtracted.flv) {
+                    apiExtracted.flv = flvMatch[1].replace(/\\u0026/g, '&');
+                 }
+                 
+                 // Get fallback title if missing
+                 if (!title) {
+                   const titleMatch = html.match(/"title":"([^"]+)"/);
+                   if (titleMatch) title = titleMatch[1];
+                 }
+                 
+                 // Get fallback cover if missing
+                 if (!coverUrl) {
+                    const coverMatch = html.match(/"coverUrl":"([^"]+)"/);
+                    if (coverMatch) coverUrl = coverMatch[1].replace(/\\u0026/g, '&');
                  }
                } catch (htmlErr) {}
             }

@@ -41,6 +41,8 @@ interface TikTokLiveContextType {
   setStreamUrl: (urls: { hls?: string; flv?: string; cover?: string }) => void;
   lastGift: { username: string; avatarUrl: string; giftName: string; giftIcon: string; count: number; id: string } | null;
   setLastGift: (gift: TikTokLiveContextType["lastGift"]) => void;
+  lastLike: { username: string; count: number; id: string } | null;
+  setLastLike: (like: TikTokLiveContextType["lastLike"]) => void;
   battleOpponents: { username: string; avatarUrl: string; nickname?: string }[];
   setBattleOpponents: (opponents: TikTokLiveContextType["battleOpponents"]) => void;
 }
@@ -83,6 +85,8 @@ const TikTokLiveContext = createContext<TikTokLiveContextType>({
   setStreamUrl: () => {},
   lastGift: null,
   setLastGift: () => {},
+  lastLike: null,
+  setLastLike: () => {},
   battleOpponents: [],
   setBattleOpponents: () => {},
 });
@@ -103,6 +107,7 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
   const [customInfo, setCustomInfo] = useState<{ title?: string; nickname?: string }>({});
   const [streamUrl, setStreamUrlState] = useState<{ hls?: string; flv?: string; cover?: string }>({});
   const [lastGift, setLastGiftState] = useState<TikTokLiveContextType["lastGift"]>(null);
+  const [lastLike, setLastLikeState] = useState<TikTokLiveContextType["lastLike"]>(null);
   const [battleOpponents, setBattleOpponents] = useState<TikTokLiveContextType["battleOpponents"]>([]);
 
   // Auto-clear gift overlay after a few seconds
@@ -114,6 +119,16 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
        return () => clearTimeout(timer);
      }
   }, [lastGift]);
+
+  // Auto-clear like overlay after a short moment
+  useEffect(() => {
+     if (lastLike) {
+       const timer = setTimeout(() => {
+          setLastLikeState(null);
+       }, 1500); // Like animation is shorter
+       return () => clearTimeout(timer);
+     }
+  }, [lastLike]);
 
   const setStats = React.useCallback((newStats: Partial<typeof stats>) => {
     setStatsState(prev => ({ ...prev, ...newStats }));
@@ -140,6 +155,7 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
       setStreamUrlState({});
       setStatsState({ viewers: 0, likes: 0, shares: 0, gifts: 0, followers: 0 });
       setLastGiftState(null);
+      setLastLikeState(null);
       setBattleOpponents([]);
     }
   }, []);
@@ -190,10 +206,12 @@ export function TikTokLiveProvider({ username: initialUsername, children }: { us
         streamUrl,
         lastGift,
         setLastGift: setLastGiftState,
+        lastLike,
+        setLastLike: setLastLikeState,
         battleOpponents,
         setBattleOpponents,
       }),
-    [streamerInfo, activeUsername, setActiveUsername, status, stats, setStatus, setProfileImage, setStreamerDetails, setStreamUrl, incrementStats, setStats, streamUrl, lastGift, setLastGiftState, battleOpponents, setBattleOpponents],
+    [streamerInfo, activeUsername, setActiveUsername, status, stats, setStatus, setProfileImage, setStreamerDetails, setStreamUrl, incrementStats, setStats, streamUrl, lastGift, setLastGiftState, lastLike, setLastLikeState, battleOpponents, setBattleOpponents],
   );
 
   return <TikTokLiveContext.Provider value={value}>{children}</TikTokLiveContext.Provider>;

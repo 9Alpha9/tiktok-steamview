@@ -9,6 +9,7 @@ import {
   Search,
   Volume2,
   VolumeX,
+  Eye
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
@@ -33,7 +34,7 @@ function formatViewers(n: number): string {
 }
 
 export function StreamPlayer() {
-  const { activeUsername, setActiveUsername, streamUrl, streamerInfo, stats, status, lastGift, battleOpponents } = useTikTokLive();
+  const { activeUsername, setActiveUsername, streamUrl, streamerInfo, stats, status, lastGift, lastLike, battleOpponents } = useTikTokLive();
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [objectFit, setObjectFit] = useState<"contain" | "cover">("contain");
@@ -45,7 +46,9 @@ export function StreamPlayer() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
   const [videoError, setVideoError] = useState(false);
+  const [streamTimeout, setStreamTimeout] = useState(false);
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamWaitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hlsUrl = streamUrl?.hls;
   const coverUrl = streamUrl?.cover;
@@ -57,9 +60,23 @@ export function StreamPlayer() {
       setStreamStartTime(Date.now());
       setElapsed(0);
       setVideoError(false);
+      setStreamTimeout(false);
       setIsMuted(true);
+      
+      // If we don't get an HLS URL within 15 seconds, show a fallback UI instead of infinite loading
+      if (streamWaitTimerRef.current) clearTimeout(streamWaitTimerRef.current);
+      streamWaitTimerRef.current = setTimeout(() => {
+         setStreamTimeout(true);
+      }, 15000);
     }
   }, [activeUsername]);
+
+  useEffect(() => {
+    if (hlsUrl) {
+       setStreamTimeout(false);
+       if (streamWaitTimerRef.current) clearTimeout(streamWaitTimerRef.current);
+    }
+  }, [hlsUrl]);
 
   useEffect(() => {
     if (!activeUsername) return;
@@ -86,7 +103,9 @@ export function StreamPlayer() {
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true,
+        lowLatencyMode: false, // Turned off to prevent audio/video desync
+        liveSyncDurationCount: 3, // Maintain a 3-segment buffer to ensure video catches up to audio
+        liveMaxLatencyDurationCount: 10,
         backBufferLength: 90,
         xhrSetup: function (xhr) {
           // TikTok CDN sometimes requires specific headers to bypass 403 on some networks
@@ -222,6 +241,30 @@ export function StreamPlayer() {
         className="relative flex-1 bg-[#0e1015] flex items-center justify-center overflow-hidden min-h-0"
         onMouseMove={handleMouseMove}
       >
+        {/* Like Overlay Animation */}
+        <AnimatePresence>
+          {lastLike && activeUsername && (
+             <motion.div
+               key={lastLike.id}
+               initial={{ opacity: 0, y: 20, scale: 0.8 }}
+               animate={{ opacity: 1, y: 0, scale: 1 }}
+               exit={{ opacity: 0, y: -40, scale: 1.2, transition: { duration: 0.4 } }}
+               className="absolute bottom-32 right-4 z-30 flex flex-col items-center pointer-events-none"
+             >
+               <motion.div 
+                 className="text-[#FF0050] font-black text-2xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+                 animate={{ scale: [1, 1.3, 1], rotate: [-10, 10, 0] }}
+                 transition={{ duration: 0.4, ease: "easeOut" }}
+               >
+                 ❤️
+               </motion.div>
+               <span className="text-white text-[10px] font-bold mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                 {lastLike.username} sent likes!
+               </span>
+             </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Gift Overlay Animation */}
         <AnimatePresence>
           {lastGift && activeUsername && (
@@ -310,30 +353,65 @@ export function StreamPlayer() {
 
         {/* Cover / Fallback when no HLS URL yet */}
         {activeUsername && !hlsUrl && !videoError && (
-          <div className="flex flex-col items-center gap-4 text-center p-6">
+          <div className="flex flex-col items-center gap-4 text-center p-6 z-10 w-full">
             {coverUrl ? (
               <div className="relative w-full max-w-[480px] aspect-video rounded-lg overflow-hidden bg-[#1f2230]">
                 <img src={coverUrl} alt="" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <p className="text-xs text-white/80">Connecting to stream&hellip;</p>
-                  </div>
+                  {streamTimeout ? (
+                     <div className="flex flex-col items-center gap-3">
+                       <div className="flex items-center justify-center w-12 h-12 bg-white/5 rounded-full mb-1">
+                          <Eye className="w-5 h-5 text-text-muted" />
+                       </div>
+                       <p className="text-sm font-medium text-white mb-0.5">Stream Video Restricted</p>
+                       <p className="text-xs text-text-muted max-w-[85%] mx-auto text-center leading-relaxed">
+                         TikTok has hidden the video feed for this specific broadcast. It might be <b>Age Restricted (18+)</b>, geo-blocked, or requires a logged-in mobile app.
+                       </p>
+                       <p className="text-[10px] text-emerald-400 font-medium bg-emerald-400/10 px-2 py-1 rounded">Live chat is still connected</p>
+                       <div className="flex gap-2 mt-2 w-full justify-center">
+                         <Button onClick={handleRefreshStream} className="h-8 text-xs bg-white/5 hover:bg-white/10 text-white border border-white/10">Retry</Button>
+                         <Button onClick={openTikTok} className="h-8 text-xs bg-[#FF0050] hover:bg-[#FF0050]/90 text-white font-semibold flex items-center gap-1.5 px-4">
+                           Open App <ExternalLink className="w-3 h-3" />
+                         </Button>
+                       </div>
+                     </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <p className="text-xs text-white/80">Connecting to stream&hellip;</p>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
               <>
-                <div className="w-16 h-16 rounded-full bg-[#1f2230] flex items-center justify-center">
-                  <Play className="w-6 h-6 text-text-muted" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white mb-1">
-                    {status === "connecting" ? "Connecting to stream..." : "Waiting for stream URL"}
-                  </p>
-                  <p className="text-xs text-text-muted">
-                    {status === "connecting" ? "Establishing connection with TikTok..." : "Stream URL will appear once the connection is ready."}
-                  </p>
-                </div>
+                {streamTimeout ? (
+                     <div className="flex flex-col items-center gap-3">
+                       <div className="flex items-center justify-center w-12 h-12 bg-white/5 rounded-full mb-1">
+                          <Eye className="w-5 h-5 text-text-muted" />
+                       </div>
+                       <p className="text-sm font-medium text-white mb-0.5">Stream Video Restricted</p>
+                       <p className="text-xs text-text-muted max-w-[85%] mx-auto text-center leading-relaxed">
+                         TikTok has hidden the video feed for this specific broadcast. It might be <b>Age Restricted (18+)</b>, geo-blocked, or requires a logged-in mobile app.
+                       </p>
+                       <p className="text-[10px] text-emerald-400 font-medium bg-emerald-400/10 px-2 py-1 rounded">Live chat is still connected</p>
+                       <div className="flex gap-2 mt-2 w-full justify-center">
+                         <Button onClick={handleRefreshStream} className="h-8 text-xs bg-white/5 hover:bg-white/10 text-white border border-white/10">Retry</Button>
+                         <Button onClick={openTikTok} className="h-8 text-xs bg-[#FF0050] hover:bg-[#FF0050]/90 text-white font-semibold flex items-center gap-1.5 px-4">
+                           Open App <ExternalLink className="w-3 h-3" />
+                         </Button>
+                       </div>
+                     </div>
+                ) : (
+                  <div>
+                    <p className="text-sm font-medium text-white mb-1">
+                      {status === "connecting" ? "Connecting to stream..." : "Waiting for stream URL"}
+                    </p>
+                    <p className="text-xs text-text-muted">
+                      {status === "connecting" ? "Establishing connection with TikTok..." : "Stream URL will appear once the connection is ready."}
+                    </p>
+                  </div>
+                )}
               </>
             )}
           </div>
